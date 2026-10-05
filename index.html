@@ -185,7 +185,11 @@ else if(t>=trackingCache[hi].t)tr=trackingCache[hi].tr;
 else{
  while(hi-lo>1){const m=(lo+hi)>>1;if(trackingCache[m].t<=t)lo=m;else hi=m}
  const a=trackingCache[lo],b=trackingCache[hi];
- if(!a.tr)tr=b.tr;else if(!b.tr)tr=a.tr;else{
+ if(!a.tr&&!b.tr)tr=null;
+ else if(!a.tr&&b.tr)tr=null;
+ else if(a.tr&&!b.tr)tr=a.tr;
+ else if(b.cutBefore||isTrackingJump(a.tr,b.tr))tr=a.tr;
+ else{
   const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1)));
   const ae=a.tr.eyeDist,be=b.tr.eyeDist;
   const eyeDist=Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be);
@@ -202,6 +206,18 @@ if(!video.videoWidth)return;syncOverlayBox();const c=overlay.getContext("2d");c.
 latest=cachedFaceAt(video.currentTime,true);if(!sizeEditing)syncSizeControl();badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
 const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
+function isTrackingJump(a,b){
+if(!a||!b)return false;
+const ref=Math.max(1,a.size||b.size||baseStickerSize||1);
+const posJump=Math.hypot(b.x-a.x,b.y-a.y)/ref;
+const ae=a.eyeDist,be=b.eyeDist;
+const eyeJump=Number.isFinite(ae)&&Number.isFinite(be)?Math.abs(be/Math.max(1,ae)-1):0;
+return posJump>.34||eyeJump>.16
+}
+function markTrackingCuts(points){
+let seg=0;
+return points.map((p,i)=>{const q={t:p.t,tr:p.tr?{...p.tr}:null,cutBefore:false,segment:seg};if(i>0&&p.tr&&points[i-1]?.tr&&isTrackingJump(points[i-1].tr,p.tr)){seg++;q.cutBefore=true;q.segment=seg}else q.segment=seg;return q})
+}
 function bridgeTrackingGaps(points){
 const out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));const maxGap=.62;
 let i=0;
@@ -212,17 +228,17 @@ while(i<out.length){
  if(!a?.tr||!b?.tr)continue;
  const gap=b.t-a.t;if(gap>maxGap)continue;
  const ref=Math.max(1,a.tr.size||b.tr.size||baseStickerSize||1),jump=Math.hypot(b.tr.x-a.tr.x,b.tr.y-a.tr.y)/ref;
- if(jump>.72)continue;
+ if(jump>.34)continue;
  for(let j=start;j<=end;j++){const p=(out[j].t-a.t)/(b.t-a.t||1);const ae=a.tr.eyeDist,be=b.tr.eyeDist;out[j].tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,size:(a.tr.size||ref)+((b.tr.size||ref)-(a.tr.size||ref))*p,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be),visible:true}}
  }
 return out
 }
 function stabilizeTrackingCache(points){
-const src=points.map(p=>p.tr?{...p.tr}:null),out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));
+const marked=markTrackingCuts(points),src=marked.map(p=>p.tr?{...p.tr}:null),out=marked.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null,cutBefore:p.cutBefore,segment:p.segment}));
 const median=a=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]};
 for(let i=0;i<src.length;i++){
  const cur=src[i];if(!cur)continue;
- const samples=[];for(let j=Math.max(0,i-2);j<=Math.min(src.length-1,i+2);j++)if(src[j])samples.push({tr:src[j],d:Math.abs(j-i)});
+ const samples=[];for(let j=Math.max(0,i-2);j<=Math.min(src.length-1,i+2);j++)if(src[j]&&marked[j].segment===marked[i].segment)samples.push({tr:src[j],d:Math.abs(j-i)});
  if(samples.length<3)continue;
  let sw=0,wx=0,wy=0;for(const q of samples){const w=q.d===0?3:q.d===1?2:1;sw+=w;wx+=q.tr.x*w;wy+=q.tr.y*w}
  const avgX=wx/sw,avgY=wy/sw,medX=median(samples.map(q=>q.tr.x)),medY=median(samples.map(q=>q.tr.y));
@@ -231,7 +247,7 @@ for(let i=0;i<src.length;i++){
  const motion=Math.hypot(last.x-first.x,last.y-first.y)/ref;
  const strength=motion<.05?.88:motion<.12?.62:motion<.22?.34:.10;
  out[i].tr.x=cur.x+(targetX-cur.x)*strength;out[i].tr.y=cur.y+(targetY-cur.y)*strength;
- const eyeSamples=[];for(let j=Math.max(0,i-1);j<=Math.min(src.length-1,i+1);j++){const e=src[j]?.eyeDist;if(Number.isFinite(e))eyeSamples.push({e,d:Math.abs(j-i)})}
+ const eyeSamples=[];for(let j=Math.max(0,i-1);j<=Math.min(src.length-1,i+1);j++){const e=src[j]?.eyeDist;if(marked[j].segment===marked[i].segment&&Number.isFinite(e))eyeSamples.push({e,d:Math.abs(j-i)})}
  if(eyeSamples.length>=2&&Number.isFinite(cur.eyeDist)){let ew=0,es=0;for(const q of eyeSamples){const w=q.d===0?4:1;ew+=w;es+=q.e*w}const eavg=es/ew,emed=median(eyeSamples.map(q=>q.e));const target=eavg*.45+emed*.55;const first=eyeSamples[0].e,last=eyeSamples[eyeSamples.length-1].e,eyeMotion=Math.abs(last-first)/Math.max(1,cur.eyeDist);const eyeStrength=eyeMotion>.035?.10:eyeMotion>.018?.24:.52;out[i].tr.eyeDist=cur.eyeDist+(target-cur.eyeDist)*eyeStrength}
 }
 return out
@@ -248,7 +264,7 @@ for(let i=0;i<=total;i++){
  const t=Math.min(video.duration-.001,i*step);badge.textContent="얼굴 분석 중… "+Math.min(100,Math.round(i/total*100))+"%";
  await seekMedia(analysisVideo,t);const r=tracker.detect(analysisVideo,overlay.width,overlay.height,1);points.push({t,tr:r.transform?{...r.transform}:null});
  // Make already-analyzed coordinates available immediately instead of waiting for the full pass.
- if(i===0||i%3===0){trackingCache=bridgeTrackingGaps(points);if(i===0&&trackingCache[0]?.tr){baseStickerSize=trackingCache[0].tr.size||baseStickerSize;baseEyeDist=trackingCache[0].tr.eyeDist||baseEyeDist;drawPreview(true)}}
+ if(i===0||i%3===0){trackingCache=markTrackingCuts(bridgeTrackingGaps(points));if(i===0&&trackingCache[0]?.tr){baseStickerSize=trackingCache[0].tr.size||baseStickerSize;baseEyeDist=trackingCache[0].tr.eyeDist||baseEyeDist;drawPreview(true)}}
  if(i%6===0)await new Promise(requestAnimationFrame);
 }
 trackingCache=stabilizeTrackingCache(bridgeTrackingGaps(points));
