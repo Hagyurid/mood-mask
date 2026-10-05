@@ -132,10 +132,10 @@ function transitionAt(t){
 const sorted=[...keyframes].sort((a,b)=>a.time-b.time);
 for(let i=1;i<sorted.length;i++){
   const k=sorted[i],dt=t-k.time;
-  if(dt>=-.09&&dt<=.11){
+  if(dt>=-.24&&dt<=.32){
     const prev=sorted[i-1]?.expr||"happy";
     const next=k.expr;
-    const p=(dt+.09)/.20;
+    const p=(dt+.24)/.56;
     return{active:true,p,prev,next};
   }
 }
@@ -181,11 +181,13 @@ ctx.shadowColor="transparent";ctx.lineWidth=Math.max(.8,bw*.0045);ctx.strokeStyl
 const fs=Math.round(bh*.245);ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`800 ${fs}px -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Helvetica Neue",Arial,sans-serif`;ctx.fillStyle="#24211f";
 if(transition?.active){
   const p=Math.max(0,Math.min(1,transition.p));
-  const close=p<.5?p*2:(1-p)*2;
-  const sy=Math.max(.12,1-close*.88);
-  const shown=p<.5?getExpr(transition.prev).t:getExpr(transition.next).t;
-  ctx.save();ctx.scale(1,sy);ctx.globalAlpha=.94;ctx.fillText(shown,0,(bh*.01)/sy,bw*.92);ctx.restore();
-  if(p>.38&&p<.62){ctx.globalAlpha=.88;ctx.font=`800 ${Math.round(fs*.86)}px -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Helvetica Neue",Arial,sans-serif`;ctx.fillText("(-_-)",0,bh*.01,bw*.78)}
+  let shown=getExpr(transition.prev).t,sy=1,sx=1;
+  if(p<.18){sy=1-p/.18*.18}
+  else if(p<.43){shown="(^_-)";sy=.82}
+  else if(p<.58){shown="(-_-)";sy=.70;sx=.96}
+  else if(p<.82){shown="(-_^)";sy=.82}
+  else{shown=getExpr(transition.next).t;sy=.82+(p-.82)/.18*.18}
+  ctx.save();ctx.scale(sx,sy);ctx.globalAlpha=.95;ctx.fillText(shown,0,(bh*.01)/sy,bw*.92);ctx.restore();
 }else{ctx.globalAlpha=.94;ctx.fillText(text,0,bh*.01,bw*.92)}
 ctx.restore()}
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
