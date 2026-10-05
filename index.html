@@ -122,25 +122,12 @@ function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
 if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
-const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);const trn=auto.checked?null:transitionAt(video.currentTime);drawSticker(c,latest,getExpr(id).t,trn);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
+const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
 function renderTimeline(){timeline.innerHTML=keyframes.map((k,i)=>{const e=getExpr(k.expr);return `<div class="kf"><button class="kfMain" data-time="${k.time}"><b style="font-family:-apple-system,BlinkMacSystemFont,Apple SD Gothic Neo,sans-serif">${e.t}</b> · ${fmt(k.time)}부터</button>${k.time>.01?`<button class="kfDel" data-del="${k.id}">×</button>`:""}</div>`}).join("");timeline.querySelectorAll("[data-time]").forEach(b=>b.onclick=()=>video.currentTime=Number(b.dataset.time));timeline.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{keyframes=keyframes.filter(k=>k.id!==b.dataset.del);renderTimeline();drawPreview(true)})}
 function exprAt(t){let x="happy";for(const k of [...keyframes].sort((a,b)=>a.time-b.time)){if(k.time<=t+.001)x=k.expr;else break}return x}
 function getExpr(id){return EXPRESSIONS.find(e=>e.id===id)||EXPRESSIONS[0]}
-function transitionAt(t){
-const sorted=[...keyframes].sort((a,b)=>a.time-b.time);
-for(let i=1;i<sorted.length;i++){
-  const k=sorted[i],dt=t-k.time;
-  if(dt>=-.24&&dt<=.32){
-    const prev=sorted[i-1]?.expr||"happy";
-    const next=k.expr;
-    const p=(dt+.24)/.56;
-    return{active:true,p,prev,next};
-  }
-}
-return{active:false,p:1,prev:null,next:exprAt(t)}
-}
 
 function markPlaying(id){exprGrid.querySelectorAll(".expr").forEach(b=>b.classList.toggle("playing",b.dataset.id===id))}
 function autoExpr(bs,fallback){const m=new Map((bs||[]).map(x=>[x.categoryName||x.displayName,x.score||0]));if((m.get("jawOpen")||0)>.52)return"surprise";if((m.get("mouthSmileLeft")||0)+(m.get("mouthSmileRight")||0)>.95)return"happy";if((m.get("eyeBlinkLeft")||0)>.58&&(m.get("eyeBlinkRight")||0)>.58)return"sleep";return fallback}
@@ -175,18 +162,11 @@ if(rel>.018){
 }
 return{x:b.x,y:b.y,size,visible:true}
 }
-function drawSticker(ctx,tr,text,transition=null){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
+function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
 const pattern=paper(ctx);if(pattern){ctx.save();ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.clip();ctx.globalAlpha=.38;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
 ctx.shadowColor="transparent";ctx.lineWidth=Math.max(.8,bw*.0045);ctx.strokeStyle="rgba(126,112,99,.30)";ctx.strokeRect(x,y,bw,bh);
 const fs=Math.round(bh*.245);ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`800 ${fs}px -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Helvetica Neue",Arial,sans-serif`;ctx.fillStyle="#24211f";
-if(transition?.active){
-  const p=Math.max(0,Math.min(1,transition.p));
-  let shown,sy;
-  if(p<.22){shown=getExpr(transition.prev).t;sy=1-(p/.22)*.22}
-  else if(p<.72){shown="(-_-)";sy=.78}
-  else{shown=getExpr(transition.next).t;sy=.78+((p-.72)/.28)*.22}
-  ctx.save();ctx.scale(1,sy);ctx.globalAlpha=.95;ctx.fillText(shown,0,(bh*.01)/sy,bw*.92);ctx.restore();
-}else{ctx.globalAlpha=.94;ctx.fillText(text,0,bh*.01,bw*.92)}
+ctx.globalAlpha=.94;ctx.fillText(text,0,bh*.01,bw*.92);
 ctx.restore()}
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
 function paper(ctx){if(!paperTile){paperTile=document.createElement("canvas");paperTile.width=72;paperTile.height=72;const p=paperTile.getContext("2d");p.fillStyle="#f7f3ea";p.fillRect(0,0,72,72);for(let i=0;i<100;i++){p.fillStyle=`rgba(120,105,92,${.03+Math.random()*.05})`;p.beginPath();p.arc(Math.random()*72,Math.random()*72,.5+Math.random()*1.2,0,Math.PI*2);p.fill()}for(let i=0;i<16;i++){const x=Math.random()*72,y=Math.random()*72;p.strokeStyle="rgba(135,118,103,.06)";p.beginPath();p.moveTo(x,y);p.lineTo(x+7+Math.random()*15,y+Math.random()*3-1.5);p.stroke()}}return ctx.createPattern(paperTile,"repeat")}
@@ -198,7 +178,7 @@ let audioTracks=[];let audioCleanup=()=>{};try{const ac=new AudioContext();const
 const combined=new MediaStream([...stream.getVideoTracks(),...audioTracks]);const candidates=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp8","video/webm"];const mime=candidates.find(m=>MediaRecorder.isTypeSupported(m))||"";let rec;try{rec=new MediaRecorder(combined,{mimeType:mime||undefined,videoBitsPerSecond:8000000})}catch(e){progressText.textContent="이 브라우저에서는 영상 저장을 지원하지 않아요.";exportBtn.disabled=false;return}
 const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};await seekTo(0);const exportTracker=new FaceTracker();await exportTracker.init();exportTracker.reset();
 const finished=new Promise((resolve,reject)=>{rec.onerror=()=>reject(new Error("인코딩 오류"));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||"video/mp4"}))});rec.start(500);
-let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const f=exportTracker.detect(video,w,h,Number(scale.value));const id=auto.checked?autoExpr(f.blend,exprAt(video.currentTime)):exprAt(video.currentTime);const trn=auto.checked?null:transitionAt(video.currentTime);drawSticker(c,f.transform,getExpr(id).t,trn);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();exportTracker.land?.close();exportTracker.det?.close();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
+let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const f=exportTracker.detect(video,w,h,Number(scale.value));const id=auto.checked?autoExpr(f.blend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,f.transform,getExpr(id).t);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();exportTracker.land?.close();exportTracker.det?.close();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
 bar.style.width="100%";progressText.textContent="완성됐어요.";exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration)}
 function seekTo(t){return new Promise(res=>{const done=()=>res();video.addEventListener("seeked",done,{once:true});video.currentTime=t;setTimeout(res,1200)})}
 </script>
