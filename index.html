@@ -51,7 +51,7 @@ body.editing{overflow:hidden}.editing .shell{height:100svh;padding:7px 9px 8px;d
 <p class="micro">사진이나 PNG를 올리면 현재 얼굴 박스 크기에 맞춰 표시됩니다.</p>
 </div>
 </section>
-<section id="sizePanel" class="card editPanel"><p class="kicker">크기</p><h2>구간별 박스 크기</h2><label class="slider">크기<input id="scale" type="range" min=".45" max="1.8" step=".01" value="1"><output id="scaleOut">100%</output></label><button id="addSize" class="secondary wide" style="margin-top:11px">현재 위치에서 구간 나누기</button><div id="sizeTimeline" class="timeline"></div><p class="micro">각 구간에서는 크기가 고정되며 경계에서 즉시 바뀝니다.</p></section>
+<section id="sizePanel" class="card editPanel"><p class="kicker">크기</p><h2>전체 박스 크기</h2><label class="slider">크기<input id="scale" type="range" min=".45" max="1.8" step=".01" value="1"><output id="scaleOut">100%</output></label><p class="micro">영상 전체에서 같은 크기를 사용합니다.</p></section>
 <section id="savePanel" class="card editPanel">
 <p class="kicker">저장</p><h2>완성 영상 만들기</h2>
 <button id="exportBtn" class="primary wide">영상 만들기</button>
@@ -76,15 +76,15 @@ window.addEventListener("error",e=>console.error("Mood Mask:",e.error||e.message
 window.addEventListener("unhandledrejection",e=>console.error("Mood Mask promise:",e.reason));
 const play=$("play"),seek=$("seek"),now=$("now"),dur=$("dur"),exprGrid=$("exprGrid"),timeline=$("timeline"),auto=$("auto"),scale=$("scale"),scaleOut=$("scaleOut");
 const exprMode=$("exprMode"),imageMode=$("imageMode"),exprControls=$("exprControls"),imageControls=$("imageControls"),autoWrap=$("autoWrap"),maskFile=$("maskFile"),maskThumb=$("maskThumb"),imagePreview=$("imagePreview");
-const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progressText=$("progressText"),done=$("done"),share=$("share"),download=$("download"),renderCanvas=$("renderCanvas"),sizeTimeline=$("sizeTimeline"),addSize=$("addSize");
+const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progressText=$("progressText"),done=$("done"),share=$("share"),download=$("download"),renderCanvas=$("renderCanvas");
 const editTabs=[...document.querySelectorAll(".editTab")],editPanels=[...document.querySelectorAll(".editPanel")];
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
-let trackingCache=[],analysisReady=false,analysisRunning=false,analysisVideo=null,baseStickerSize=0,sizeSegments=[{id:crypto.randomUUID(),time:0,scale:1}],sizeEditing=false;
+let trackingCache=[],analysisReady=false,analysisRunning=false,analysisVideo=null,baseStickerSize=0,globalBoxScale=1;
 let maskMode="expression",maskImage=null,maskImageUrl=null;
 
-renderExpressions(); renderTimeline(); renderSizeTimeline();
+renderExpressions(); renderTimeline();
 editTabs.forEach(b=>b.addEventListener("click",()=>{editTabs.forEach(x=>x.classList.toggle("active",x===b));editPanels.forEach(p=>p.classList.toggle("active",p.id===b.dataset.panel));if(b.dataset.panel!=="savePanel")requestAnimationFrame(()=>drawPreview(true))}));
 
 function setMaskMode(mode){maskMode=mode;exprMode.classList.toggle("active",mode==="expression");imageMode.classList.toggle("active",mode==="image");exprControls.classList.toggle("hidden",mode!=="expression");imageControls.classList.toggle("hidden",mode!=="image");autoWrap.classList.toggle("hidden",mode!=="expression");if(video.videoWidth)drawPreview(true)}
@@ -99,8 +99,7 @@ video.onpause=()=>{play.textContent="▶";cancelAnimationFrame(raf);drawPreview(
 video.onended=()=>{play.textContent="▶";drawPreview(true)};
 video.onseeked=()=>{drawPreview(true)};
 seek.oninput=()=>{video.currentTime=Number(seek.value);now.textContent=fmt(video.currentTime);syncSizeControl()};
-scale.oninput=()=>{const seg=sizeSegmentAt(video.currentTime||0);if(seg)seg.scale=Number(scale.value);scaleOut.value=Math.round(Number(scale.value)*100)+"%";renderSizeTimeline();drawPreview(true)};
-addSize.onclick=()=>{const t=video.currentTime;if(t<.08||t>=(video.duration||0)-.08)return;const current=sizeSegmentAt(t),same=sizeSegments.find(k=>Math.abs(k.time-t)<.12);if(!same)sizeSegments.push({id:crypto.randomUUID(),time:t,scale:current?.scale||1});sizeSegments.sort((a,b)=>a.time-b.time);renderSizeTimeline();syncSizeControl();drawPreview(true)};
+scale.oninput=()=>{globalBoxScale=Number(scale.value);scaleOut.value=Math.round(globalBoxScale*100)+"%";drawPreview(true)};
 $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Math.abs(k.time-t)<.12);if(same)same.expr=selected;else keyframes.push({id:crypto.randomUUID(),time:t,expr:selected});keyframes.sort((a,b)=>a.time-b.time);renderTimeline();drawPreview(true)};
 exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
@@ -129,7 +128,7 @@ await metadataWithTimeout(8000);
 const w=video.videoWidth||1080,h=video.videoHeight||1920;
 stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;await new Promise(requestAnimationFrame);syncOverlayBox();
 seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
-keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];sizeSegments=[{id:crypto.randomUUID(),time:0,scale:1}];baseStickerSize=0;sizeEditing=false;scale.value="1";scaleOut.value="100%";trackingCache=[];analysisReady=false;renderTimeline();renderSizeTimeline();
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];globalBoxScale=1;baseStickerSize=0;scale.value="1";scaleOut.value="100%";trackingCache=[];analysisReady=false;renderTimeline();
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
@@ -159,19 +158,7 @@ if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,ove
 seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0);
 }
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
-function sizeSegmentAt(t){
-const a=[...sizeSegments].sort((x,y)=>x.time-y.time);let seg=a[0]||null;for(const x of a){if(x.time<=t+.001)seg=x;else break}return seg
-}
-function sizeAt(t){return sizeSegmentAt(t)?.scale||1}
-function syncSizeControl(){
-const sc=sizeAt(video.currentTime||0);scale.value=String(sc);scaleOut.value=Math.round(sc*100)+"%"
-}
-function renderSizeTimeline(){
-const a=[...sizeSegments].sort((x,y)=>x.time-y.time);
-sizeTimeline.innerHTML=a.map((k,i)=>{const end=i<a.length-1?a[i+1].time:(video.duration||0);return `<div class="kf"><button class="kfMain" data-size-time="${k.time}"><b>${Math.round(k.scale*100)}%</b> · ${fmt(k.time)}–${fmt(end)}</button>${k.time>.01?`<button class="kfDel" data-size-del="${k.id}">×</button>`:""}</div>`}).join("");
-sizeTimeline.querySelectorAll("[data-size-time]").forEach(b=>b.onclick=()=>{video.currentTime=Number(b.dataset.sizeTime)+.001;syncSizeControl();drawPreview(true)});
-sizeTimeline.querySelectorAll("[data-size-del]").forEach(b=>b.onclick=()=>{sizeSegments=sizeSegments.filter(k=>k.id!==b.dataset.sizeDel);renderSizeTimeline();syncSizeControl();drawPreview(true)})
-}
+function syncSizeControl(){scale.value=String(globalBoxScale);scaleOut.value=Math.round(globalBoxScale*100)+"%"}
 function cachedFaceAt(t,preview=false){
 if(!trackingCache.length)return null;
 let lo=0,hi=trackingCache.length-1;
@@ -190,11 +177,11 @@ else{
  tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be),visible:true}
 }
 if(!tr)return null;
-const manual=sizeAt(t);return{x:tr.x,y:tr.y,size:baseStickerSize*manual,visible:true}
+return{x:tr.x,y:tr.y,size:baseStickerSize*globalBoxScale,visible:true}
 }
 function drawPreview(force){
 if(!video.videoWidth)return;syncOverlayBox();const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-latest=cachedFaceAt(video.currentTime,true);if(!sizeEditing)syncSizeControl();badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
+latest=cachedFaceAt(video.currentTime,true);badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
 const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function medianNum(a){if(!a.length)return null;const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]}
