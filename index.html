@@ -56,7 +56,7 @@ const EXPRESSIONS=[
 {id:"kiss",t:"-3-",l:"삐죽"},{id:"dot",t:"._.",l:"정적"},{id:"surprise",t:"ㅇㅁㅇ",l:"놀람"},
 {id:"kiss2",t:"^3^",l:"쪽"},{id:"sleep",t:"-_-",l:"졸림"},{id:"dizzy",t:"@ㅁ@",l:"혼란"}];
 const $=id=>document.getElementById(id);
-const file=$("file"),upload=$("upload"),editor=$("editor"),newBtn=$("newBtn"),video=$("video"),stage=$("stage"),overlay=$("overlay"),badge=$("badge");
+const file=$("file"),upload=$("upload"),editor=$("editor"),newBtn=$("newBtn"),video=$("video"),stage=$("stage"),overlay=$("overlay"),badge=$("badge");\nwindow.addEventListener("error",e=>console.error("Mood Mask:",e.error||e.message));\nwindow.addEventListener("unhandledrejection",e=>console.error("Mood Mask promise:",e.reason));
 const play=$("play"),seek=$("seek"),now=$("now"),dur=$("dur"),exprGrid=$("exprGrid"),timeline=$("timeline"),auto=$("auto"),scale=$("scale"),scaleOut=$("scaleOut");
 const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progressText=$("progressText"),done=$("done"),share=$("share"),download=$("download"),renderCanvas=$("renderCanvas");
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
@@ -79,14 +79,40 @@ exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
 
 async function loadVideo(f){
-if(!f.type.startsWith("video/"))return;
-if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);video.src=objectUrl;
-upload.classList.add("hidden");editor.classList.remove("hidden");newBtn.classList.remove("hidden");badge.classList.remove("hidden");badge.textContent="영상 읽는 중…";
-await metadata();stage.style.aspectRatio=String(video.videoWidth/video.videoHeight);overlay.width=video.videoWidth;overlay.height=video.videoHeight;seek.max=String(video.duration);dur.textContent=fmt(video.duration);
+try{
+if(!f)return;
+if(objectUrl)URL.revokeObjectURL(objectUrl);
+objectUrl=URL.createObjectURL(f);
+upload.classList.add("hidden");editor.classList.remove("hidden");newBtn.classList.remove("hidden");
+badge.classList.remove("hidden");badge.textContent="영상 읽는 중…";
+video.pause();video.removeAttribute("src");video.load();video.src=objectUrl;video.muted=false;video.playsInline=true;video.load();
+await metadataWithTimeout(8000);
+const w=video.videoWidth||1080,h=video.videoHeight||1920;
+stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;
+seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
 keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];renderTimeline();
-await tracker.init(s=>badge.textContent=s);badge.classList.add("hidden");tracker.reset();drawPreview(true);
+try{await seekTo(0.001)}catch{}
+drawRawFrame();
+badge.textContent="얼굴 추적 준비 중…";
+tracker.init(msg=>badge.textContent=msg).then(()=>{badge.classList.add("hidden");tracker.reset();drawPreview(true)}).catch(err=>{console.error(err);badge.textContent="영상은 열렸어요 · 얼굴 추적 로딩 실패";drawRawFrame()});
+}catch(err){
+console.error(err);badge.classList.remove("hidden");badge.textContent="영상을 열지 못했어요. 다른 영상으로 다시 시도해 주세요.";
 }
-function metadata(){if(video.readyState>=1)return Promise.resolve();return new Promise((res,rej)=>{video.addEventListener("loadedmetadata",res,{once:true});video.addEventListener("error",()=>rej(new Error("영상 읽기 실패")),{once:true})})}
+}
+function metadataWithTimeout(ms){
+if(video.readyState>=1&&video.videoWidth)return Promise.resolve();
+return new Promise((res,rej)=>{
+let done=false;
+const finish=fn=>{if(done)return;done=true;clearTimeout(timer);video.removeEventListener("loadedmetadata",ok);video.removeEventListener("loadeddata",ok);video.removeEventListener("error",bad);fn()};
+const ok=()=>finish(res),bad=()=>finish(()=>rej(new Error("영상 읽기 실패")));
+video.addEventListener("loadedmetadata",ok);video.addEventListener("loadeddata",ok);video.addEventListener("error",bad);
+const timer=setTimeout(()=>video.videoWidth?finish(res):finish(()=>rej(new Error("영상 metadata timeout"))),ms);
+});
+}
+function drawRawFrame(){
+if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
+seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0);
+}
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
