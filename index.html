@@ -33,7 +33,7 @@ button,input,select{font:inherit}.shell{width:min(100%,680px);margin:auto;paddin
 <div class="transport"><button id="play" class="play">▶</button><span id="now">0:00.0</span><input id="seek" type="range" min="0" max="1" step=".001" value="0"><span id="dur">0:00.0</span></div>
 </div>
 <section class="card">
-<div class="rowHead"><div><p class="kicker">마스크</p><h2>어떤 방식으로 가릴까?</h2></div><label id="autoWrap" class="switch"><input id="auto" type="checkbox"> 자동</label></div>
+<div class="rowHead"><div><p class="kicker">마스크</p><h2>어떤 방식으로 가릴까?</h2></div><label id="autoWrap" class="switch hidden"><input id="auto" type="checkbox"> 자동</label></div>
 <div class="modeTabs"><button id="exprMode" class="modeBtn active">이모티콘</button><button id="imageMode" class="modeBtn">이미지</button></div>
 <div id="exprControls">
 <div id="exprGrid" class="exprGrid"></div>
@@ -75,6 +75,7 @@ const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progr
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
+let trackingCache=[],analysisReady=false,analysisRunning=false;
 let maskMode="expression",maskImage=null,maskImageUrl=null;
 
 renderExpressions(); renderTimeline();
@@ -89,7 +90,7 @@ play.onclick=async()=>{video.paused?await video.play():video.pause()};
 video.onplay=()=>{play.textContent="❚❚"; loop()};
 video.onpause=()=>{play.textContent="▶";cancelAnimationFrame(raf);drawPreview(true)};
 video.onended=()=>{play.textContent="▶";drawPreview(true)};
-video.onseeked=()=>{tracker.reset();drawPreview(true)};
+video.onseeked=()=>{drawPreview(true)};
 seek.oninput=()=>{video.currentTime=Number(seek.value);now.textContent=fmt(video.currentTime)};
 scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";drawPreview(true)};
 $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Math.abs(k.time-t)<.12);if(same)same.expr=selected;else keyframes.push({id:crypto.randomUUID(),time:t,expr:selected});keyframes.sort((a,b)=>a.time-b.time);renderTimeline();drawPreview(true)};
@@ -109,11 +110,11 @@ await metadataWithTimeout(8000);
 const w=video.videoWidth||1080,h=video.videoHeight||1920;
 stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;
 seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
-keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];renderTimeline();
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];trackingCache=[];analysisReady=false;renderTimeline();
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
-tracker.init(msg=>badge.textContent=msg).then(()=>{badge.classList.add("hidden");tracker.reset();drawPreview(true)}).catch(err=>{console.error(err);badge.textContent="영상은 열렸어요 · 얼굴 추적 로딩 실패";drawRawFrame()});
+tracker.init(msg=>badge.textContent=msg).then(()=>{tracker.reset();analyzeVideoOnce()}).catch(err=>{console.error(err);badge.textContent="영상은 열렸어요 · 얼굴 추적 로딩 실패";drawRawFrame()});
 }catch(err){
 console.error(err);badge.classList.remove("hidden");badge.textContent="영상을 열지 못했어요. 다른 영상으로 다시 시도해 주세요.";
 }
@@ -133,10 +134,31 @@ if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,ove
 seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0);
 }
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
+function cachedFaceAt(t){
+if(!trackingCache.length)return null;
+let lo=0,hi=trackingCache.length-1;
+if(t<=trackingCache[0].t)return trackingCache[0].tr;
+if(t>=trackingCache[hi].t)return trackingCache[hi].tr;
+while(hi-lo>1){const m=(lo+hi)>>1;if(trackingCache[m].t<=t)lo=m;else hi=m}
+const a=trackingCache[lo],b=trackingCache[hi];if(!a.tr)return b.tr;if(!b.tr)return a.tr;
+const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1)));
+return{x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,size:(a.tr.size+(b.tr.size-a.tr.size)*p)*Number(scale.value),visible:true}
+}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
-const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
+latest=cachedFaceAt(video.currentTime);badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
+const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
+}
+async function analyzeVideoOnce(){
+if(analysisRunning||!tracker?.land||!video.duration)return;
+analysisRunning=true;analysisReady=false;trackingCache=[];video.pause();badge.classList.remove("hidden");
+const restore=video.currentTime,step=1/12,total=Math.max(1,Math.ceil(video.duration/step));tracker.reset();
+for(let i=0;i<=total;i++){
+ const t=Math.min(video.duration-.001,i*step);badge.textContent="얼굴 분석 중… "+Math.min(100,Math.round(i/total*100))+"%";
+ await seekTo(t);const r=tracker.detect(video,overlay.width,overlay.height,1);trackingCache.push({t,tr:r.transform?{...r.transform}:null});
+ if(i%6===0)await new Promise(requestAnimationFrame);
+}
+analysisRunning=false;analysisReady=true;await seekTo(Math.min(restore,video.duration-.001));badge.classList.add("hidden");drawPreview(true)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
 function renderTimeline(){timeline.innerHTML=keyframes.map((k,i)=>{const e=getExpr(k.expr);return `<div class="kf"><button class="kfMain" data-time="${k.time}"><b style="font-family:-apple-system,BlinkMacSystemFont,Apple SD Gothic Neo,sans-serif">${e.t}</b> · ${fmt(k.time)}부터</button>${k.time>.01?`<button class="kfDel" data-del="${k.id}">×</button>`:""}</div>`}).join("");timeline.querySelectorAll("[data-time]").forEach(b=>b.onclick=()=>video.currentTime=Number(b.dataset.time));timeline.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{keyframes=keyframes.filter(k=>k.id!==b.dataset.del);renderTimeline();drawPreview(true)})}
@@ -192,9 +214,9 @@ if(!video.duration)return;exportBtn.disabled=true;progressWrap.classList.remove(
 const original=video.currentTime;const w=video.videoWidth,h=video.videoHeight;renderCanvas.width=w;renderCanvas.height=h;const c=renderCanvas.getContext("2d",{alpha:false});const stream=renderCanvas.captureStream(30);
 let audioTracks=[];let audioCleanup=()=>{};try{const ac=new AudioContext();const src=ac.createMediaElementSource(video);const dest=ac.createMediaStreamDestination();src.connect(dest);const gain=ac.createGain();gain.gain.value=0;src.connect(gain);gain.connect(ac.destination);audioTracks=dest.stream.getAudioTracks();audioCleanup=()=>{dest.stream.getTracks().forEach(t=>t.stop())}}catch{}
 const combined=new MediaStream([...stream.getVideoTracks(),...audioTracks]);const candidates=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp8","video/webm"];const mime=candidates.find(m=>MediaRecorder.isTypeSupported(m))||"";let rec;try{rec=new MediaRecorder(combined,{mimeType:mime||undefined,videoBitsPerSecond:8000000})}catch(e){progressText.textContent="이 브라우저에서는 영상 저장을 지원하지 않아요.";exportBtn.disabled=false;return}
-const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};await seekTo(0);const exportTracker=new FaceTracker();await exportTracker.init();exportTracker.reset();
+const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};await seekTo(0);
 const finished=new Promise((resolve,reject)=>{rec.onerror=()=>reject(new Error("인코딩 오류"));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||"video/mp4"}))});rec.start(500);
-let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const f=exportTracker.detect(video,w,h,Number(scale.value));const id=auto.checked?autoExpr(f.blend,exprAt(video.currentTime)):exprAt(video.currentTime);drawMask(c,f.transform,getExpr(id).t);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();exportTracker.land?.close();exportTracker.det?.close();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
+let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const tr=cachedFaceAt(video.currentTime);const id=exprAt(video.currentTime);drawMask(c,tr,getExpr(id).t);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
 bar.style.width="100%";progressText.textContent="완성됐어요.";exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration)}
 function seekTo(t){return new Promise(res=>{const done=()=>res();video.addEventListener("seeked",done,{once:true});video.currentTime=t;setTimeout(res,1200)})}
 </script>
