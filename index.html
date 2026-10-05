@@ -179,26 +179,23 @@ return ratio
 }
 function cachedFaceAt(t,preview=false){
 if(!trackingCache.length)return null;
-let lo=0,hi=trackingCache.length-1,tr=null;
-if(t<=trackingCache[0].t)tr=trackingCache[0].tr;
-else if(t>=trackingCache[hi].t)tr=trackingCache[hi].tr;
+let lo=0,hi=trackingCache.length-1;
+if(t<=trackingCache[0].t)lo=hi=0;
+else if(t>=trackingCache[hi].t)lo=hi;
+else{while(hi-lo>1){const m=(lo+hi)>>1;if(trackingCache[m].t<=t)lo=m;else hi=m}}
+const a=trackingCache[lo],b=trackingCache[hi];
+let tr=null;
+if(lo===hi)tr=a.tr;
+else if(!a.tr&&!b.tr)tr=null;
+else if(!a.tr)tr=b.tr;
+else if(!b.tr)tr=a.tr;
+else if(b.snap){tr=t<b.t?{...a.tr}:{...b.tr}}
 else{
- while(hi-lo>1){const m=(lo+hi)>>1;if(trackingCache[m].t<=t)lo=m;else hi=m}
- const a=trackingCache[lo],b=trackingCache[hi];
- if(!a.tr&&!b.tr)tr=null;
- else if(!a.tr&&b.tr)tr=null;
- else if(a.tr&&!b.tr)tr=a.tr;
- else if(b.cutBefore||isTrackingJump(a.tr,b.tr))tr=a.tr;
- else{
-  const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1)));
-  const ae=a.tr.eyeDist,be=b.tr.eyeDist;
-  const eyeDist=Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be);
-  tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,eyeDist,visible:true}
- }
+ const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1))),ae=a.tr.eyeDist,be=b.tr.eyeDist;
+ tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be),visible:true}
 }
 if(!tr)return null;
-const manual=preview&&sizeEditing?Number(scale.value):sizeAt(t);
-const auto=eyeScaleFromDistance(tr.eyeDist);
+const manual=preview&&sizeEditing?Number(scale.value):sizeAt(t),auto=eyeScaleFromDistance(tr.eyeDist);
 return{x:tr.x,y:tr.y,size:baseStickerSize*auto*manual,eyeDist:tr.eyeDist,visible:true}
 }
 function drawPreview(force){
@@ -206,56 +203,40 @@ if(!video.videoWidth)return;syncOverlayBox();const c=overlay.getContext("2d");c.
 latest=cachedFaceAt(video.currentTime,true);if(!sizeEditing)syncSizeControl();badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
 const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
-function isTrackingJump(a,b){
-if(!a||!b)return false;
-const ref=Math.max(1,a.size||b.size||baseStickerSize||1);
-const posJump=Math.hypot(b.x-a.x,b.y-a.y)/ref;
-const ae=a.eyeDist,be=b.eyeDist;
-const eyeJump=Number.isFinite(ae)&&Number.isFinite(be)?Math.abs(be/Math.max(1,ae)-1):0;
-return posJump>.34||eyeJump>.16
-}
-function markTrackingCuts(points){
-let seg=0;
-return points.map((p,i)=>{const q={t:p.t,tr:p.tr?{...p.tr}:null,cutBefore:false,segment:seg};if(i>0&&p.tr&&points[i-1]?.tr&&isTrackingJump(points[i-1].tr,p.tr)){seg++;q.cutBefore=true;q.segment=seg}else q.segment=seg;return q})
-}
-function bridgeTrackingGaps(points){
-const out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));const maxGap=.62;
-let i=0;
-while(i<out.length){
- if(out[i].tr){i++;continue}
- const start=i;while(i<out.length&&!out[i].tr)i++;const end=i-1;
- const a=start-1>=0?out[start-1]:null,b=i<out.length?out[i]:null;
- if(!a?.tr||!b?.tr)continue;
- const gap=b.t-a.t;if(gap>maxGap)continue;
- const ref=Math.max(1,a.tr.size||b.tr.size||baseStickerSize||1),jump=Math.hypot(b.tr.x-a.tr.x,b.tr.y-a.tr.y)/ref;
- if(jump>.34)continue;
- for(let j=start;j<=end;j++){const p=(out[j].t-a.t)/(b.t-a.t||1);const ae=a.tr.eyeDist,be=b.tr.eyeDist;out[j].tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,size:(a.tr.size||ref)+((b.tr.size||ref)-(a.tr.size||ref))*p,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be),visible:true}}
+function medianNum(a){if(!a.length)return null;const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]}
+function prepareTracking(raw){
+const p=raw.map(x=>({t:x.t,tr:x.tr?{...x.tr}:null,snap:false}));
+const step=p.length>1?Math.max(.001,p[1].t-p[0].t):1/15;
+const maxMissing=Math.max(1,Math.round(.50/step));
+// Fill only short misses. This improves recognition continuity without inventing long tracks.
+for(let i=0;i<p.length;){
+ if(p[i].tr){i++;continue}
+ const a=i-1;let j=i;while(j<p.length&&!p[j].tr)j++;
+ const b=j,count=b-i;
+ if(a>=0&&b<p.length&&count<=maxMissing&&p[a].tr&&p[b].tr){
+  const A=p[a].tr,B=p[b].tr,ref=Math.max(1,A.size||B.size||1);
+  const dist=Math.hypot(B.x-A.x,B.y-A.y)/ref;
+  if(dist<1.15){for(let k=i;k<b;k++){const q=(p[k].t-p[a].t)/(p[b].t-p[a].t||1),ae=A.eyeDist,be=B.eyeDist;p[k].tr={x:A.x+(B.x-A.x)*q,y:A.y+(B.y-A.y)*q,size:(A.size||ref)+((B.size||ref)-(A.size||ref))*q,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*q:(Number.isFinite(ae)?ae:be),visible:true}}}
  }
-return out
+ i=Math.max(j,i+1)
 }
-function stabilizeTrackingCache(points){
-const marked=markTrackingCuts(points),src=marked.map(p=>p.tr?{...p.tr}:null),out=marked.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null,cutBefore:p.cutBefore,segment:p.segment}));
-const median=a=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]};
-for(let i=0;i<src.length;i++){
- const cur=src[i];if(!cur)continue;
- const samples=[];for(let j=Math.max(0,i-2);j<=Math.min(src.length-1,i+2);j++)if(src[j]&&marked[j].segment===marked[i].segment)samples.push({tr:src[j],d:Math.abs(j-i)});
- if(samples.length<3)continue;
- let sw=0,wx=0,wy=0;for(const q of samples){const w=q.d===0?3:q.d===1?2:1;sw+=w;wx+=q.tr.x*w;wy+=q.tr.y*w}
- const avgX=wx/sw,avgY=wy/sw,medX=median(samples.map(q=>q.tr.x)),medY=median(samples.map(q=>q.tr.y));
- const targetX=avgX*.72+medX*.28,targetY=avgY*.72+medY*.28;
- const first=samples[0].tr,last=samples[samples.length-1].tr,ref=Math.max(1,cur.size||baseStickerSize||1);
- const motion=Math.hypot(last.x-first.x,last.y-first.y)/ref;
- const strength=motion<.05?.88:motion<.12?.62:motion<.22?.34:.10;
- out[i].tr.x=cur.x+(targetX-cur.x)*strength;out[i].tr.y=cur.y+(targetY-cur.y)*strength;
- const eyeSamples=[];for(let j=Math.max(0,i-1);j<=Math.min(src.length-1,i+1);j++){const e=src[j]?.eyeDist;if(marked[j].segment===marked[i].segment&&Number.isFinite(e))eyeSamples.push({e,d:Math.abs(j-i)})}
- if(eyeSamples.length>=2&&Number.isFinite(cur.eyeDist)){let ew=0,es=0;for(const q of eyeSamples){const w=q.d===0?4:1;ew+=w;es+=q.e*w}const eavg=es/ew,emed=median(eyeSamples.map(q=>q.e));const target=eavg*.45+emed*.55;const first=eyeSamples[0].e,last=eyeSamples[eyeSamples.length-1].e,eyeMotion=Math.abs(last-first)/Math.max(1,cur.eyeDist);const eyeStrength=eyeMotion>.035?.10:eyeMotion>.018?.24:.52;out[i].tr.eyeDist=cur.eyeDist+(target-cur.eyeDist)*eyeStrength}
+// Mark only unmistakable discontinuities as hard snaps.
+for(let i=1;i<p.length;i++){const A=p[i-1].tr,B=p[i].tr;if(!A||!B)continue;const ref=Math.max(1,A.size||B.size||1),d=Math.hypot(B.x-A.x,B.y-A.y)/ref;const er=Number.isFinite(A.eyeDist)&&Number.isFinite(B.eyeDist)?Math.max(A.eyeDist,B.eyeDist)/Math.max(1,Math.min(A.eyeDist,B.eyeDist)):1;if(d>1.05||er>1.55)p[i].snap=true}
+// Zero-lag 3-sample median only for tiny coordinate jitter; never smooth across a snap.
+const src=p.map(x=>x.tr?{...x.tr}:null);
+for(let i=1;i<p.length-1;i++){
+ if(!src[i]||!src[i-1]||!src[i+1]||p[i].snap||p[i+1].snap)continue;
+ const ref=Math.max(1,src[i].size||1),local=Math.max(Math.hypot(src[i].x-src[i-1].x,src[i].y-src[i-1].y),Math.hypot(src[i+1].x-src[i].x,src[i+1].y-src[i].y))/ref;
+ if(local<.16){const mx=medianNum([src[i-1].x,src[i].x,src[i+1].x]),my=medianNum([src[i-1].y,src[i].y,src[i+1].y]);p[i].tr.x=src[i].x+(mx-src[i].x)*.45;p[i].tr.y=src[i].y+(my-src[i].y)*.45}
+ const eyes=[src[i-1].eyeDist,src[i].eyeDist,src[i+1].eyeDist].filter(Number.isFinite);
+ if(eyes.length===3){const em=medianNum(eyes),rel=Math.abs(em-src[i].eyeDist)/Math.max(1,src[i].eyeDist);if(rel<.05)p[i].tr.eyeDist=src[i].eyeDist+(em-src[i].eyeDist)*.55}
 }
-return out
+return p
 }
 async function analyzeVideoOnce(){
 if(analysisRunning||!tracker?.land||!video.duration||!objectUrl)return;
 analysisRunning=true;analysisReady=false;badge.classList.remove("hidden");
-const step=1/12,total=Math.max(1,Math.ceil(video.duration/step)),points=[];
+const step=1/15,total=Math.max(1,Math.ceil(video.duration/step)),points=[];
 if(analysisVideo){try{analysisVideo.pause();analysisVideo.removeAttribute("src");analysisVideo.load()}catch{}}
 analysisVideo=document.createElement("video");analysisVideo.muted=true;analysisVideo.playsInline=true;analysisVideo.preload="auto";analysisVideo.src=objectUrl;analysisVideo.load();
 try{await mediaMetadata(analysisVideo,8000)}catch(e){console.error(e);analysisRunning=false;badge.textContent="얼굴 분석 영상을 열지 못했어요";return}
@@ -264,10 +245,10 @@ for(let i=0;i<=total;i++){
  const t=Math.min(video.duration-.001,i*step);badge.textContent="얼굴 분석 중… "+Math.min(100,Math.round(i/total*100))+"%";
  await seekMedia(analysisVideo,t);const r=tracker.detect(analysisVideo,overlay.width,overlay.height,1);points.push({t,tr:r.transform?{...r.transform}:null});
  // Make already-analyzed coordinates available immediately instead of waiting for the full pass.
- if(i===0||i%3===0){trackingCache=markTrackingCuts(bridgeTrackingGaps(points));if(i===0&&trackingCache[0]?.tr){baseStickerSize=trackingCache[0].tr.size||baseStickerSize;baseEyeDist=trackingCache[0].tr.eyeDist||baseEyeDist;drawPreview(true)}}
+ if(i===0||i%3===0){trackingCache=points.map(x=>({t:x.t,tr:x.tr?{...x.tr}:null,snap:false}));if(i===0&&trackingCache[0]?.tr){baseStickerSize=trackingCache[0].tr.size||baseStickerSize;baseEyeDist=trackingCache[0].tr.eyeDist||baseEyeDist;drawPreview(true)}}
  if(i%6===0)await new Promise(requestAnimationFrame);
 }
-trackingCache=stabilizeTrackingCache(bridgeTrackingGaps(points));
+trackingCache=prepareTracking(points);
 const firstSizes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.size)).slice(0,12).map(x=>x.tr.size).sort((a,b)=>a-b);baseStickerSize=firstSizes.length?firstSizes[Math.floor(firstSizes.length/2)]:Math.min(overlay.width,overlay.height)*.24;
 const firstEyes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.eyeDist)).slice(0,12).map(x=>x.tr.eyeDist).sort((a,b)=>a-b);baseEyeDist=firstEyes.length?firstEyes[Math.floor(firstEyes.length/2)]:0;
 analysisRunning=false;analysisReady=true;badge.classList.add("hidden");syncSizeControl();drawPreview(true)
@@ -285,16 +266,16 @@ function fmt(s){if(!Number.isFinite(s))return"0:00.0";const m=Math.floor(s/60),r
 class FaceTracker{
 constructor(){this.land=null;this.det=null;this.prev=null;this.lastTs=0;this.lastGood=0}
 async init(status){if(this.land)return;status?.("얼굴 추적 모델 불러오는 중…");const v=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm");
-const opts={runningMode:"VIDEO",numFaces:1,minFaceDetectionConfidence:.30,minFacePresenceConfidence:.25,minTrackingConfidence:.25,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:false};
+const opts={runningMode:"VIDEO",numFaces:1,minFaceDetectionConfidence:.22,minFacePresenceConfidence:.18,minTrackingConfidence:.18,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:false};
 try{this.land=await FaceLandmarker.createFromOptions(v,{...opts,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"}})}
 catch{this.land=await FaceLandmarker.createFromOptions(v,{...opts,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"CPU"}})}
-status?.("작은 얼굴 보조 검출기 준비 중…");try{this.det=await FaceDetector.createFromOptions(v,{runningMode:"VIDEO",minDetectionConfidence:.25,minSuppressionThreshold:.3,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite",delegate:"CPU"}})}catch{this.det=null}
+status?.("작은 얼굴 보조 검출기 준비 중…");try{this.det=await FaceDetector.createFromOptions(v,{runningMode:"VIDEO",minDetectionConfidence:.18,minSuppressionThreshold:.3,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite",delegate:"CPU"}})}catch{this.det=null}
 status?.("준비 완료")}
 reset(){this.prev=null;this.lastGood=0}
 detect(el,w,h,scale){if(!this.land||el.readyState<2)return{transform:null,blend:[]};const clock=performance.now(),ts=Math.max(this.lastTs+.1,clock);this.lastTs=ts;const r=this.land.detectForVideo(el,ts);let raw=r.faceLandmarks?.[0]?fromLandmarks(r.faceLandmarks[0],w,h,scale):null;
 if(!raw&&this.det){try{const d=this.det.detectForVideo(el,ts+.01).detections?.[0];raw=d?fromDetection(d,w,h,scale):null}catch{}}
-if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.92)}else this.prev=null;
-return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
+if(raw){this.lastGood=clock;this.prev=raw}else this.prev=null;
+return{transform:raw,blend:r.faceBlendshapes?.[0]?.categories||[]}}
 }
 function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;const le1=l[33],le2=l[133],re1=l[362],re2=l[263];let eyeDist=null;if(le1&&le2&&re1&&re2){const lx=(le1.x+le2.x)*.5*w,ly=(le1.y+le2.y)*.5*h,rx=(re1.x+re2.x)*.5*w,ry=(re1.y+re2.y)*.5*h;eyeDist=Math.hypot(rx-lx,ry-ly)}return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*.995*scale,eyeDist,visible:true}}
 function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*.91*scale,visible:true}}
