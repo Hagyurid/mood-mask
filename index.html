@@ -66,6 +66,7 @@ const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progr
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
+let lockedStickerSize=null;
 
 renderExpressions(); renderTimeline();
 
@@ -77,7 +78,7 @@ video.onpause=()=>{play.textContent="▶";cancelAnimationFrame(raf);drawPreview(
 video.onended=()=>{play.textContent="▶";drawPreview(true)};
 video.onseeked=()=>{tracker.reset();drawPreview(true)};
 seek.oninput=()=>{video.currentTime=Number(seek.value);now.textContent=fmt(video.currentTime)};
-scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";tracker.reset();drawPreview(true)};
+scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";if(latest?.size){const base=latest.size/Math.max(.01,Number(scale.dataset.prev||1));lockedStickerSize=base*Number(scale.value);latest={...latest,size:lockedStickerSize};}scale.dataset.prev=scale.value;drawPreview(true)};
 $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Math.abs(k.time-t)<.12);if(same)same.expr=selected;else keyframes.push({id:crypto.randomUUID(),time:t,expr:selected});keyframes.sort((a,b)=>a.time-b.time);renderTimeline();drawPreview(true)};
 exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
@@ -95,7 +96,7 @@ await metadataWithTimeout(8000);
 const w=video.videoWidth||1080,h=video.videoHeight||1920;
 stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;
 seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
-keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];renderTimeline();
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];lockedStickerSize=null;scale.dataset.prev=scale.value;renderTimeline();
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
@@ -121,7 +122,7 @@ seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
+if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;if(latest){if(lockedStickerSize==null)lockedStickerSize=latest.size;latest={...latest,size:lockedStickerSize};}latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
 const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
@@ -160,10 +161,7 @@ if(dist>dead){
   x=a.x+ux*effective*moveAlpha;
   y=a.y+uy*effective*moveAlpha;
 }
-const ratio=b.size/Math.max(1,a.size);
-let size=a.size;
-if(ratio>1.24||ratio<.76) size=a.size+(b.size-a.size)*.045;
-return{x,y,size,visible:true}
+return{x,y,size:a.size,visible:true}
 }
 function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
 const pattern=paper(ctx);if(pattern){ctx.save();ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.clip();ctx.globalAlpha=.38;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
