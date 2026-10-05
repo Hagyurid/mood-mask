@@ -82,7 +82,8 @@ $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Mat
 exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
 
-async function loadVideo(f){\nif(!tracker) tracker=new FaceTracker();
+async function loadVideo(f){
+if(!tracker) tracker=new FaceTracker();
 try{
 if(!f)return;
 if(objectUrl)URL.revokeObjectURL(objectUrl);
