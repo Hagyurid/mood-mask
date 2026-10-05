@@ -121,7 +121,7 @@ seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-if(force||performance.now()-lastDetect>8){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
+if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
 const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
@@ -148,7 +148,25 @@ return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
 }
 function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*1.36*scale,visible:true}}
 function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*1.24*scale,visible:true}}
-function smooth(a,b,k){if(!a)return b;return{x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k,size:a.size+(b.size-a.size)*k,visible:true}}
+function smooth(a,b,k){
+if(!a)return b;
+const dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);
+const dead=Math.max(1.5,a.size*.012);
+let x=a.x,y=a.y;
+if(dist>dead){
+  const moveAlpha=dist>a.size*.12?.96:.82;
+  x=a.x+dx*moveAlpha;
+  y=a.y+dy*moveAlpha;
+}
+const ratio=b.size/Math.max(1,a.size);
+let size=a.size;
+if(ratio>1.18||ratio<.82){
+  size=a.size+(b.size-a.size)*.18;
+}else if(Math.abs(b.size-a.size)>a.size*.035){
+  size=a.size+(b.size-a.size)*.08;
+}
+return{x,y,size,visible:true}
+}
 
 function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
 const pattern=paper(ctx);if(pattern){ctx.save();ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.clip();ctx.globalAlpha=.38;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
