@@ -301,6 +301,95 @@ ctx.restore()}
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
 function paper(ctx){if(!paperTile){paperTile=document.createElement("canvas");paperTile.width=72;paperTile.height=72;const p=paperTile.getContext("2d");p.fillStyle="#f7f3ea";p.fillRect(0,0,72,72);for(let i=0;i<100;i++){p.fillStyle=`rgba(120,105,92,${.03+Math.random()*.05})`;p.beginPath();p.arc(Math.random()*72,Math.random()*72,.5+Math.random()*1.2,0,Math.PI*2);p.fill()}for(let i=0;i<16;i++){const x=Math.random()*72,y=Math.random()*72;p.strokeStyle="rgba(135,118,103,.06)";p.beginPath();p.moveTo(x,y);p.lineTo(x+7+Math.random()*15,y+Math.random()*3-1.5);p.stroke()}}return ctx.createPattern(paperTile,"repeat")}
 
+function u32(v,o){return new DataView(v.buffer,v.byteOffset,v.byteLength).getUint32(o)}
+function boxType(v,o){return String.fromCharCode(v[o+4],v[o+5],v[o+6],v[o+7])}
+function parseBoxes(v,start=0,end=v.length){
+ const out=[];let p=start;
+ while(p+8<=end){
+  let size=u32(v,p),header=8;if(size===1){if(p+16>end)break;const dv=new DataView(v.buffer,v.byteOffset+p+8,8);const hi=dv.getUint32(0),lo=dv.getUint32(4);size=hi*4294967296+lo;header=16}else if(size===0)size=end-p;
+  if(!Number.isFinite(size)||size<header||p+size>end)break;
+  const type=boxType(v,p),node={type,start:p,size,header};
+  if(["moov","trak","edts","mdia","minf","stbl","dinf"].includes(type))node.children=parseBoxes(v,p+header,p+size);
+  out.push(node);p+=size
+ }
+ return out
+}
+function childBox(n,type){return n?.children?.find(x=>x.type===type)||null}
+function rawSlice(v,n){return v.subarray(n.start,n.start+n.size)}
+function fullboxOffset(n){return n.header}
+function readMvhdTimescale(v,n){
+ const r=rawSlice(v,n),o=fullboxOffset(n),ver=r[o];return ver===1?u32(r,o+20):u32(r,o+12)
+}
+function readMdhdTimescale(v,n){
+ const r=rawSlice(v,n),o=fullboxOffset(n),ver=r[o];return ver===1?u32(r,o+20):u32(r,o+12)
+}
+function handlerType(v,n){
+ const r=rawSlice(v,n),o=fullboxOffset(n);return String.fromCharCode(r[o+8],r[o+9],r[o+10],r[o+11])
+}
+function readFirstElstMediaTime(v,n){
+ const r=rawSlice(v,n),o=fullboxOffset(n),ver=r[o],count=u32(r,o+4);if(!count)return null;
+ const q=o+8,dv=new DataView(r.buffer,r.byteOffset,r.byteLength);
+ return ver===1?Number(dv.getBigInt64(q+8)):dv.getInt32(q+4)
+}
+function wrapBox(type,payload){
+ const out=new Uint8Array(8+payload.length),dv=new DataView(out.buffer);dv.setUint32(0,out.length);
+ for(let i=0;i<4;i++)out[4+i]=type.charCodeAt(i);out.set(payload,8);return out
+}
+function concatU8(parts){
+ const n=parts.reduce((a,b)=>a+b.length,0),out=new Uint8Array(n);let p=0;for(const x of parts){out.set(x,p);p+=x.length}return out
+}
+function rebuildMp4Node(src,n,leadUnits,offsetShift,oldMoovEnd){
+ if(n.children){
+  return wrapBox(n.type,concatU8(n.children.map(c=>rebuildMp4Node(src,c,leadUnits,offsetShift,oldMoovEnd))))
+ }
+ const r=rawSlice(src,n);
+ if(n.type==="elst"){
+  const o=fullboxOffset(n),ver=r[o],count=u32(r,o+4);if(count!==1)return r;
+  const entrySize=ver===1?20:12,durSize=ver===1?8:4,q=o+8;
+  const body=new Uint8Array(8+entrySize*2),bdv=new DataView(body.buffer);
+  body[0]=ver;body[1]=r[o+1];body[2]=r[o+2];body[3]=r[o+3];bdv.setUint32(4,2);
+  if(ver===1){
+   bdv.setBigUint64(8,BigInt(leadUnits));bdv.setBigInt64(16,-1n);bdv.setInt16(24,1);bdv.setInt16(26,0);
+   const oldDur=Number(new DataView(r.buffer,r.byteOffset,r.byteLength).getBigUint64(q));
+   bdv.setBigUint64(28,BigInt(Math.max(0,oldDur-leadUnits)));
+   body.set(r.subarray(q+8,q+entrySize),36)
+  }else{
+   bdv.setUint32(8,leadUnits);bdv.setInt32(12,-1);bdv.setInt16(16,1);bdv.setInt16(18,0);
+   const oldDur=u32(r,q);bdv.setUint32(20,Math.max(0,oldDur-leadUnits));
+   body.set(r.subarray(q+4,q+entrySize),24)
+  }
+  return wrapBox("elst",body)
+ }
+ if((n.type==="stco"||n.type==="co64")&&offsetShift){
+  const out=new Uint8Array(r),o=fullboxOffset(n),count=u32(out,o+4),dv=new DataView(out.buffer),step=n.type==="stco"?4:8;let q=o+8;
+  for(let i=0;i<count;i++,q+=step){
+   if(step===4){const val=dv.getUint32(q);if(val>=oldMoovEnd)dv.setUint32(q,val+offsetShift)}
+   else{const val=Number(dv.getBigUint64(q));if(val>=oldMoovEnd)dv.setBigUint64(q,BigInt(val+offsetShift))}
+  }
+  return out
+ }
+ return r
+}
+async function makeCapCutCompatible(blob){
+ if(!blob?.type?.includes("mp4"))return blob;
+ try{
+  const src=new Uint8Array(await blob.arrayBuffer()),top=parseBoxes(src),moov=top.find(x=>x.type==="moov");if(!moov)return blob;
+  const mvhd=childBox(moov,"mvhd"),movieTimescale=mvhd?readMvhdTimescale(src,mvhd):0;if(!movieTimescale)return blob;
+  let leadSeconds=2/30;
+  for(const trak of moov.children?.filter(x=>x.type==="trak")||[]){
+   const mdia=childBox(trak,"mdia"),hdlr=childBox(mdia,"hdlr"),mdhd=childBox(mdia,"mdhd"),edts=childBox(trak,"edts"),elst=childBox(edts,"elst");
+   if(hdlr&&mdhd&&elst&&handlerType(src,hdlr)==="vide"){
+    const mediaTime=readFirstElstMediaTime(src,elst),mediaScale=readMdhdTimescale(src,mdhd);
+    if(Number.isFinite(mediaTime)&&mediaTime>0&&mediaScale>0)leadSeconds=mediaTime/mediaScale
+   }
+  }
+  const leadUnits=Math.max(1,Math.round(leadSeconds*movieTimescale)),oldMoovEnd=moov.start+moov.size;
+  const firstMoov=rebuildMp4Node(src,moov,leadUnits,0,oldMoovEnd),delta=firstMoov.length-moov.size;
+  const parts=top.map(n=>n===moov?rebuildMp4Node(src,moov,leadUnits,delta,oldMoovEnd):rawSlice(src,n));
+  const fixed=concatU8(parts);return new Blob([fixed],{type:"video/mp4"})
+ }catch(e){console.warn("CapCut MP4 compatibility pass skipped",e);return blob}
+}
+
 async function exportVideo(){
 if(!video.duration)return;exportBtn.disabled=true;progressWrap.classList.remove("hidden");done.classList.add("hidden");bar.style.width="0";progressText.textContent="준비 중…";video.pause();
 const original=video.currentTime,w=video.videoWidth,h=video.videoHeight;renderCanvas.width=w;renderCanvas.height=h;const c=renderCanvas.getContext("2d",{alpha:false});
@@ -335,7 +424,7 @@ const rafLoop=()=>{
 paint(0);
 if("requestVideoFrameCallback" in HTMLVideoElement.prototype)rvfcId=video.requestVideoFrameCallback(frameLoop);else rafId=requestAnimationFrame(rafLoop);
 video.addEventListener("ended",()=>{stop=true;if(rvfcId&&video.cancelVideoFrameCallback)video.cancelVideoFrameCallback(rvfcId);if(rafId)cancelAnimationFrame(rafId);paint(video.duration);setTimeout(()=>{if(rec.state!=="inactive")rec.stop()},80)},{once:true});
-try{await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const fileOut=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[fileOut]}))share.classList.remove("hidden")}catch{}}bar.style.width="100%";progressText.textContent="완성됐어요."}
+try{await video.play();const rawBlob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();progressText.textContent="CapCut 호환 처리 중…";const blob=await makeCapCutCompatible(rawBlob);lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const fileOut=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[fileOut]}))share.classList.remove("hidden")}catch{}}bar.style.width="100%";progressText.textContent="완성됐어요."}
 catch(e){console.error(e);progressText.textContent="영상 생성 중 오류가 발생했어요."}
 finally{exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration);try{videoTrack?.stop()}catch{}}
 }
