@@ -65,11 +65,11 @@ const play=$("play"),seek=$("seek"),now=$("now"),dur=$("dur"),exprGrid=$("exprGr
 const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progressText=$("progressText"),done=$("done"),share=$("share"),download=$("download"),renderCanvas=$("renderCanvas");
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
-const tracker=new FaceTracker();
+let tracker=null;
 
 renderExpressions(); renderTimeline();
 
-file.onchange=()=>{const f=file.files?.[0];if(f)loadVideo(f)};
+file.addEventListener("change",()=>{const f=file.files&&file.files[0];if(f)loadVideo(f)});
 newBtn.onclick=()=>{file.value="";file.click()};
 play.onclick=async()=>{video.paused?await video.play():video.pause()};
 video.onplay=()=>{play.textContent="❚❚"; loop()};
@@ -82,7 +82,7 @@ $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Mat
 exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
 
-async function loadVideo(f){
+async function loadVideo(f){\nif(!tracker) tracker=new FaceTracker();
 try{
 if(!f)return;
 if(objectUrl)URL.revokeObjectURL(objectUrl);
