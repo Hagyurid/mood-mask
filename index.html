@@ -173,9 +173,9 @@ sizeTimeline.querySelectorAll("[data-size-del]").forEach(b=>b.onclick=()=>{sizeK
 }
 function eyeScaleFromDistance(eyeDist){
 if(!baseEyeDist||!Number.isFinite(eyeDist))return 1;
-const ratio=eyeDist/baseEyeDist,dead=.04,delta=ratio-1,mag=Math.abs(delta);
-if(mag<=dead)return 1;
-return 1+Math.sign(delta)*(mag-dead)
+const ratio=eyeDist/baseEyeDist,dead=.03,delta=ratio-1;
+if(Math.abs(delta)<=dead)return 1;
+return ratio
 }
 function cachedFaceAt(t,preview=false){
 if(!trackingCache.length)return null;
@@ -231,8 +231,8 @@ for(let i=0;i<src.length;i++){
  const motion=Math.hypot(last.x-first.x,last.y-first.y)/ref;
  const strength=motion<.05?.88:motion<.12?.62:motion<.22?.34:.10;
  out[i].tr.x=cur.x+(targetX-cur.x)*strength;out[i].tr.y=cur.y+(targetY-cur.y)*strength;
- const eyes=samples.map(q=>q.tr.eyeDist).filter(Number.isFinite);
- if(eyes.length>=3){let ew=0,es=0;for(const q of samples){if(!Number.isFinite(q.tr.eyeDist))continue;const w=q.d===0?3:q.d===1?2:1;ew+=w;es+=q.tr.eyeDist*w}const eavg=es/ew,emed=median(eyes);out[i].tr.eyeDist=eavg*.65+emed*.35}
+ const eyeSamples=[];for(let j=Math.max(0,i-1);j<=Math.min(src.length-1,i+1);j++){const e=src[j]?.eyeDist;if(Number.isFinite(e))eyeSamples.push({e,d:Math.abs(j-i)})}
+ if(eyeSamples.length>=2&&Number.isFinite(cur.eyeDist)){let ew=0,es=0;for(const q of eyeSamples){const w=q.d===0?4:1;ew+=w;es+=q.e*w}const eavg=es/ew,emed=median(eyeSamples.map(q=>q.e));const target=eavg*.45+emed*.55;const first=eyeSamples[0].e,last=eyeSamples[eyeSamples.length-1].e,eyeMotion=Math.abs(last-first)/Math.max(1,cur.eyeDist);const eyeStrength=eyeMotion>.035?.10:eyeMotion>.018?.24:.52;out[i].tr.eyeDist=cur.eyeDist+(target-cur.eyeDist)*eyeStrength}
 }
 return out
 }
