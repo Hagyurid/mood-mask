@@ -164,6 +164,23 @@ if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,ove
 latest=cachedFaceAt(video.currentTime,true);if(!sizeEditing)syncSizeControl();badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
 const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
+function stabilizeTrackingCache(points){
+const src=points.map(p=>p.tr?{...p.tr}:null),out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));
+const median=a=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]};
+for(let i=0;i<src.length;i++){
+ const cur=src[i];if(!cur)continue;
+ const samples=[];for(let j=Math.max(0,i-2);j<=Math.min(src.length-1,i+2);j++)if(src[j])samples.push({tr:src[j],d:Math.abs(j-i)});
+ if(samples.length<3)continue;
+ let sw=0,wx=0,wy=0;for(const q of samples){const w=q.d===0?3:q.d===1?2:1;sw+=w;wx+=q.tr.x*w;wy+=q.tr.y*w}
+ const avgX=wx/sw,avgY=wy/sw,medX=median(samples.map(q=>q.tr.x)),medY=median(samples.map(q=>q.tr.y));
+ const targetX=avgX*.72+medX*.28,targetY=avgY*.72+medY*.28;
+ const first=samples[0].tr,last=samples[samples.length-1].tr,ref=Math.max(1,cur.size||baseStickerSize||1);
+ const motion=Math.hypot(last.x-first.x,last.y-first.y)/ref;
+ const strength=motion<.05?.88:motion<.12?.62:motion<.22?.34:.10;
+ out[i].tr.x=cur.x+(targetX-cur.x)*strength;out[i].tr.y=cur.y+(targetY-cur.y)*strength;
+}
+return out
+}
 async function analyzeVideoOnce(){
 if(analysisRunning||!tracker?.land||!video.duration)return;
 analysisRunning=true;analysisReady=false;trackingCache=[];video.pause();badge.classList.remove("hidden");
@@ -173,6 +190,7 @@ for(let i=0;i<=total;i++){
  await seekTo(t);const r=tracker.detect(video,overlay.width,overlay.height,1);trackingCache.push({t,tr:r.transform?{...r.transform}:null});
  if(i%6===0)await new Promise(requestAnimationFrame);
 }
+trackingCache=stabilizeTrackingCache(trackingCache);
 const firstSizes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.size)).slice(0,12).map(x=>x.tr.size).sort((a,b)=>a-b);baseStickerSize=firstSizes.length?firstSizes[Math.floor(firstSizes.length/2)]:Math.min(overlay.width,overlay.height)*.24;
 analysisRunning=false;analysisReady=true;await seekTo(Math.min(restore,video.duration-.001));badge.classList.add("hidden");syncSizeControl();drawPreview(true)
 }
