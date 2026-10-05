@@ -81,7 +81,7 @@ const editTabs=[...document.querySelectorAll(".editTab")],editPanels=[...documen
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
-let trackingCache=[],analysisReady=false,analysisRunning=false,baseStickerSize=0,baseEyeDist=0,sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}],sizeEditing=false;
+let trackingCache=[],analysisReady=false,analysisRunning=false,analysisVideo=null,baseStickerSize=0,baseEyeDist=0,sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}],sizeEditing=false;
 let maskMode="expression",maskImage=null,maskImageUrl=null;
 
 renderExpressions(); renderTimeline(); renderSizeTimeline();
@@ -133,7 +133,7 @@ keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];sizeKeyframes=[{id:cry
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
-tracker.init(msg=>badge.textContent=msg).then(()=>{tracker.reset();analyzeVideoOnce()}).catch(err=>{console.error(err);badge.textContent="영상은 열렸어요 · 얼굴 추적 로딩 실패";drawRawFrame()});
+tracker.init(msg=>badge.textContent=msg).then(()=>{tracker.reset();const first=tracker.detect(video,overlay.width,overlay.height,1);if(first.transform){trackingCache=[{t:video.currentTime||0,tr:{...first.transform}}];baseStickerSize=first.transform.size||baseStickerSize;baseEyeDist=first.transform.eyeDist||baseEyeDist;badge.classList.add("hidden");drawPreview(true)}analyzeVideoOnce()}).catch(err=>{console.error(err);badge.textContent="영상은 열렸어요 · 얼굴 추적 로딩 실패";drawRawFrame()});
 }catch(err){
 console.error(err);badge.classList.remove("hidden");badge.textContent="영상을 열지 못했어요. 다른 영상으로 다시 시도해 주세요.";
 }
@@ -148,6 +148,12 @@ video.addEventListener("loadedmetadata",ok);video.addEventListener("loadeddata",
 const timer=setTimeout(()=>video.videoWidth?finish(res):finish(()=>rej(new Error("영상 metadata timeout"))),ms);
 });
 }
+function mediaMetadata(el,ms=8000){
+if(el.readyState>=1&&el.videoWidth)return Promise.resolve();
+return new Promise((res,rej)=>{let done=false;const finish=fn=>{if(done)return;done=true;clearTimeout(timer);el.removeEventListener("loadedmetadata",ok);el.removeEventListener("loadeddata",ok);el.removeEventListener("error",bad);fn()};const ok=()=>finish(res),bad=()=>finish(()=>rej(new Error("분석 영상 읽기 실패")));el.addEventListener("loadedmetadata",ok);el.addEventListener("loadeddata",ok);el.addEventListener("error",bad);const timer=setTimeout(()=>el.videoWidth?finish(res):finish(()=>rej(new Error("분석 영상 metadata timeout"))),ms)})
+}
+function seekMedia(el,t){return new Promise(res=>{if(Math.abs((el.currentTime||0)-t)<.002)return res();const done=()=>res();el.addEventListener("seeked",done,{once:true});el.currentTime=t;setTimeout(res,1200)})}
+
 function drawRawFrame(){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
 seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0);
@@ -196,6 +202,21 @@ if(!video.videoWidth)return;syncOverlayBox();const c=overlay.getContext("2d");c.
 latest=cachedFaceAt(video.currentTime,true);if(!sizeEditing)syncSizeControl();badge.classList.toggle("hidden",!!latest||analysisRunning);if(!latest&&!analysisRunning)badge.textContent=analysisReady?"이 구간에서 얼굴을 찾지 못했어요":"분석 준비 중…";
 const id=exprAt(video.currentTime);drawMask(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
+function bridgeTrackingGaps(points){
+const out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));const maxGap=.62;
+let i=0;
+while(i<out.length){
+ if(out[i].tr){i++;continue}
+ const start=i;while(i<out.length&&!out[i].tr)i++;const end=i-1;
+ const a=start-1>=0?out[start-1]:null,b=i<out.length?out[i]:null;
+ if(!a?.tr||!b?.tr)continue;
+ const gap=b.t-a.t;if(gap>maxGap)continue;
+ const ref=Math.max(1,a.tr.size||b.tr.size||baseStickerSize||1),jump=Math.hypot(b.tr.x-a.tr.x,b.tr.y-a.tr.y)/ref;
+ if(jump>.72)continue;
+ for(let j=start;j<=end;j++){const p=(out[j].t-a.t)/(b.t-a.t||1);const ae=a.tr.eyeDist,be=b.tr.eyeDist;out[j].tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,size:(a.tr.size||ref)+((b.tr.size||ref)-(a.tr.size||ref))*p,eyeDist:Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be),visible:true}}
+ }
+return out
+}
 function stabilizeTrackingCache(points){
 const src=points.map(p=>p.tr?{...p.tr}:null),out=points.map(p=>({t:p.t,tr:p.tr?{...p.tr}:null}));
 const median=a=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(b.length/2)]};
@@ -216,19 +237,26 @@ for(let i=0;i<src.length;i++){
 return out
 }
 async function analyzeVideoOnce(){
-if(analysisRunning||!tracker?.land||!video.duration)return;
-analysisRunning=true;analysisReady=false;trackingCache=[];video.pause();badge.classList.remove("hidden");
-const restore=video.currentTime,step=1/12,total=Math.max(1,Math.ceil(video.duration/step));tracker.reset();
+if(analysisRunning||!tracker?.land||!video.duration||!objectUrl)return;
+analysisRunning=true;analysisReady=false;badge.classList.remove("hidden");
+const step=1/12,total=Math.max(1,Math.ceil(video.duration/step)),points=[];
+if(analysisVideo){try{analysisVideo.pause();analysisVideo.removeAttribute("src");analysisVideo.load()}catch{}}
+analysisVideo=document.createElement("video");analysisVideo.muted=true;analysisVideo.playsInline=true;analysisVideo.preload="auto";analysisVideo.src=objectUrl;analysisVideo.load();
+try{await mediaMetadata(analysisVideo,8000)}catch(e){console.error(e);analysisRunning=false;badge.textContent="얼굴 분석 영상을 열지 못했어요";return}
+tracker.reset();
 for(let i=0;i<=total;i++){
  const t=Math.min(video.duration-.001,i*step);badge.textContent="얼굴 분석 중… "+Math.min(100,Math.round(i/total*100))+"%";
- await seekTo(t);const r=tracker.detect(video,overlay.width,overlay.height,1);trackingCache.push({t,tr:r.transform?{...r.transform}:null});
+ await seekMedia(analysisVideo,t);const r=tracker.detect(analysisVideo,overlay.width,overlay.height,1);points.push({t,tr:r.transform?{...r.transform}:null});
+ // Make already-analyzed coordinates available immediately instead of waiting for the full pass.
+ if(i===0||i%3===0){trackingCache=bridgeTrackingGaps(points);if(i===0&&trackingCache[0]?.tr){baseStickerSize=trackingCache[0].tr.size||baseStickerSize;baseEyeDist=trackingCache[0].tr.eyeDist||baseEyeDist;drawPreview(true)}}
  if(i%6===0)await new Promise(requestAnimationFrame);
 }
-trackingCache=stabilizeTrackingCache(trackingCache);
+trackingCache=stabilizeTrackingCache(bridgeTrackingGaps(points));
 const firstSizes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.size)).slice(0,12).map(x=>x.tr.size).sort((a,b)=>a-b);baseStickerSize=firstSizes.length?firstSizes[Math.floor(firstSizes.length/2)]:Math.min(overlay.width,overlay.height)*.24;
 const firstEyes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.eyeDist)).slice(0,12).map(x=>x.tr.eyeDist).sort((a,b)=>a-b);baseEyeDist=firstEyes.length?firstEyes[Math.floor(firstEyes.length/2)]:0;
-analysisRunning=false;analysisReady=true;await seekTo(Math.min(restore,video.duration-.001));badge.classList.add("hidden");syncSizeControl();drawPreview(true)
+analysisRunning=false;analysisReady=true;badge.classList.add("hidden");syncSizeControl();drawPreview(true)
 }
+
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
 function renderTimeline(){timeline.innerHTML=keyframes.map((k,i)=>{const e=getExpr(k.expr);return `<div class="kf"><button class="kfMain" data-time="${k.time}"><b style="font-family:-apple-system,BlinkMacSystemFont,Apple SD Gothic Neo,sans-serif">${e.t}</b> · ${fmt(k.time)}부터</button>${k.time>.01?`<button class="kfDel" data-del="${k.id}">×</button>`:""}</div>`}).join("");timeline.querySelectorAll("[data-time]").forEach(b=>b.onclick=()=>video.currentTime=Number(b.dataset.time));timeline.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{keyframes=keyframes.filter(k=>k.id!==b.dataset.del);renderTimeline();drawPreview(true)})}
 function exprAt(t){let x="happy";for(const k of [...keyframes].sort((a,b)=>a.time-b.time)){if(k.time<=t+.001)x=k.expr;else break}return x}
@@ -249,7 +277,7 @@ status?.("준비 완료")}
 reset(){this.prev=null;this.lastGood=0}
 detect(el,w,h,scale){if(!this.land||el.readyState<2)return{transform:null,blend:[]};const clock=performance.now(),ts=Math.max(this.lastTs+.1,clock);this.lastTs=ts;const r=this.land.detectForVideo(el,ts);let raw=r.faceLandmarks?.[0]?fromLandmarks(r.faceLandmarks[0],w,h,scale):null;
 if(!raw&&this.det){try{const d=this.det.detectForVideo(el,ts+.01).detections?.[0];raw=d?fromDetection(d,w,h,scale):null}catch{}}
-if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.92)}else if(this.prev&&clock-this.lastGood<520)this.prev={...this.prev,visible:true};else this.prev=null;
+if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.92)}else this.prev=null;
 return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
 }
 function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;const le1=l[33],le2=l[133],re1=l[362],re2=l[263];let eyeDist=null;if(le1&&le2&&re1&&re2){const lx=(le1.x+le2.x)*.5*w,ly=(le1.y+le2.y)*.5*h,rx=(re1.x+re2.x)*.5*w,ry=(re1.y+re2.y)*.5*h;eyeDist=Math.hypot(rx-lx,ry-ly)}return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*.995*scale,eyeDist,visible:true}}
