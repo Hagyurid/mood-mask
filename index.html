@@ -298,13 +298,42 @@ function paper(ctx){if(!paperTile){paperTile=document.createElement("canvas");pa
 
 async function exportVideo(){
 if(!video.duration)return;exportBtn.disabled=true;progressWrap.classList.remove("hidden");done.classList.add("hidden");bar.style.width="0";progressText.textContent="준비 중…";video.pause();
-const original=video.currentTime;const w=video.videoWidth,h=video.videoHeight;renderCanvas.width=w;renderCanvas.height=h;const c=renderCanvas.getContext("2d",{alpha:false});const stream=renderCanvas.captureStream(30);
-let audioTracks=[];let audioCleanup=()=>{};try{const ac=new AudioContext();const src=ac.createMediaElementSource(video);const dest=ac.createMediaStreamDestination();src.connect(dest);const gain=ac.createGain();gain.gain.value=0;src.connect(gain);gain.connect(ac.destination);audioTracks=dest.stream.getAudioTracks();audioCleanup=()=>{dest.stream.getTracks().forEach(t=>t.stop())}}catch{}
-const combined=new MediaStream([...stream.getVideoTracks(),...audioTracks]);const candidates=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp8","video/webm"];const mime=candidates.find(m=>MediaRecorder.isTypeSupported(m))||"";let rec;try{rec=new MediaRecorder(combined,{mimeType:mime||undefined,videoBitsPerSecond:8000000})}catch(e){progressText.textContent="이 브라우저에서는 영상 저장을 지원하지 않아요.";exportBtn.disabled=false;return}
+const original=video.currentTime,w=video.videoWidth,h=video.videoHeight;renderCanvas.width=w;renderCanvas.height=h;const c=renderCanvas.getContext("2d",{alpha:false});
+const stream=renderCanvas.captureStream(30),videoTrack=stream.getVideoTracks()[0];
+let audioTracks=[],audioCleanup=()=>{};try{const ac=new AudioContext();const src=ac.createMediaElementSource(video);const dest=ac.createMediaStreamDestination();src.connect(dest);const gain=ac.createGain();gain.gain.value=0;src.connect(gain);gain.connect(ac.destination);audioTracks=dest.stream.getAudioTracks();audioCleanup=()=>{dest.stream.getTracks().forEach(t=>t.stop());ac.close().catch(()=>{})}}catch{}
+const combined=new MediaStream([...stream.getVideoTracks(),...audioTracks]),candidates=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp8","video/webm"],mime=candidates.find(m=>MediaRecorder.isTypeSupported(m))||"";
+let rec;try{rec=new MediaRecorder(combined,{mimeType:mime||undefined,videoBitsPerSecond:10000000})}catch(e){progressText.textContent="이 브라우저에서는 영상 저장을 지원하지 않아요.";exportBtn.disabled=false;return}
 const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};await seekTo(0);
-const finished=new Promise((resolve,reject)=>{rec.onerror=()=>reject(new Error("인코딩 오류"));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||"video/mp4"}))});rec.start(500);
-let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const tr=cachedFaceAt(video.currentTime,false);const id=exprAt(video.currentTime);drawMask(c,tr,getExpr(id).t);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
-bar.style.width="100%";progressText.textContent="완성됐어요.";exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration)}
+const finished=new Promise((resolve,reject)=>{rec.onerror=()=>reject(new Error("인코딩 오류"));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||"video/mp4"}))});
+rec.start(500);
+let stop=false,lastMedia=-1;
+const paint=(mediaTime)=>{
+ if(stop)return;
+ const t=Math.max(0,Math.min(video.duration,Number.isFinite(mediaTime)?mediaTime:video.currentTime));
+ c.drawImage(video,0,0,w,h);
+ const tr=cachedFaceAt(t,false),id=exprAt(t);drawMask(c,tr,getExpr(id).t);
+ const p=Math.min(.99,t/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";
+ lastMedia=t
+};
+let rvfcId=0,rafId=0;
+const frameLoop=(_,meta)=>{
+ if(stop)return;
+ paint(meta?.mediaTime);
+ rvfcId=video.requestVideoFrameCallback(frameLoop)
+};
+const rafLoop=()=>{
+ if(stop)return;
+ // Fallback only: draw when media time advances, rather than tying mask timing to display refresh.
+ if(video.currentTime!==lastMedia)paint(video.currentTime);
+ rafId=requestAnimationFrame(rafLoop)
+};
+paint(0);
+if("requestVideoFrameCallback" in HTMLVideoElement.prototype)rvfcId=video.requestVideoFrameCallback(frameLoop);else rafId=requestAnimationFrame(rafLoop);
+video.addEventListener("ended",()=>{stop=true;if(rvfcId&&video.cancelVideoFrameCallback)video.cancelVideoFrameCallback(rvfcId);if(rafId)cancelAnimationFrame(rafId);paint(video.duration);setTimeout(()=>{if(rec.state!=="inactive")rec.stop()},80)},{once:true});
+try{await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const fileOut=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[fileOut]}))share.classList.remove("hidden")}catch{}}bar.style.width="100%";progressText.textContent="완성됐어요."}
+catch(e){console.error(e);progressText.textContent="영상 생성 중 오류가 발생했어요."}
+finally{exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration);try{videoTrack?.stop()}catch{}}
+}
 function seekTo(t){return new Promise(res=>{const done=()=>res();video.addEventListener("seeked",done,{once:true});video.currentTime=t;setTimeout(res,1200)})}
 </script>
 </body>
