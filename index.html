@@ -66,7 +66,6 @@ const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progr
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
-let lockedStickerSize=null;
 
 renderExpressions(); renderTimeline();
 
@@ -78,7 +77,7 @@ video.onpause=()=>{play.textContent="▶";cancelAnimationFrame(raf);drawPreview(
 video.onended=()=>{play.textContent="▶";drawPreview(true)};
 video.onseeked=()=>{tracker.reset();drawPreview(true)};
 seek.oninput=()=>{video.currentTime=Number(seek.value);now.textContent=fmt(video.currentTime)};
-scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";if(latest?.size){const base=latest.size/Math.max(.01,Number(scale.dataset.prev||1));lockedStickerSize=base*Number(scale.value);latest={...latest,size:lockedStickerSize};}scale.dataset.prev=scale.value;drawPreview(true)};
+scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";drawPreview(true)};
 $("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Math.abs(k.time-t)<.12);if(same)same.expr=selected;else keyframes.push({id:crypto.randomUUID(),time:t,expr:selected});keyframes.sort((a,b)=>a.time-b.time);renderTimeline();drawPreview(true)};
 exportBtn.onclick=exportVideo;
 share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
@@ -96,7 +95,7 @@ await metadataWithTimeout(8000);
 const w=video.videoWidth||1080,h=video.videoHeight||1920;
 stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;
 seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
-keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];lockedStickerSize=null;scale.dataset.prev=scale.value;renderTimeline();
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];renderTimeline();
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
@@ -122,7 +121,7 @@ seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;if(latest){if(lockedStickerSize==null)lockedStickerSize=latest.size;latest={...latest,size:lockedStickerSize};}latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
+if(force||performance.now()-lastDetect>14){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
 const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
@@ -151,7 +150,16 @@ function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p 
 function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*.91*scale,visible:true}}
 function smooth(a,b,k){
 if(!a)return b;
-return{x:b.x,y:b.y,size:a.size,visible:true}
+const diff=b.size-a.size;
+const rel=Math.abs(diff)/Math.max(1,a.size);
+let size=a.size;
+// Ignore tiny frame-to-frame face-boundary noise.
+if(rel>.018){
+  // Genuine distance changes follow continuously, faster when the scale change is large.
+  const sizeAlpha=rel>.10?.32:rel>.05?.22:.14;
+  size=a.size+diff*sizeAlpha;
+}
+return{x:b.x,y:b.y,size,visible:true}
 }
 function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
 const pattern=paper(ctx);if(pattern){ctx.save();ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.clip();ctx.globalAlpha=.38;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
