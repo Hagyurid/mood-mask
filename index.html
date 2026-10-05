@@ -121,7 +121,7 @@ seek.value=String(video.currentTime||0);now.textContent=fmt(video.currentTime||0
 function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 function drawPreview(force){
 if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
-if(force||performance.now()-lastDetect>45){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
+if(force||performance.now()-lastDetect>22){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
 const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
@@ -143,16 +143,21 @@ status?.("준비 완료")}
 reset(){this.prev=null;this.lastGood=0}
 detect(el,w,h,scale){if(!this.land||el.readyState<2)return{transform:null,blend:[]};const clock=performance.now(),ts=Math.max(this.lastTs+.1,clock);this.lastTs=ts;const r=this.land.detectForVideo(el,ts);let raw=r.faceLandmarks?.[0]?fromLandmarks(r.faceLandmarks[0],w,h,scale):null;
 if(!raw&&this.det){try{const d=this.det.detectForVideo(el,ts+.01).detections?.[0];raw=d?fromDetection(d,w,h,scale):null}catch{}}
-if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.28)}else if(this.prev&&clock-this.lastGood<520)this.prev={...this.prev,visible:true};else this.prev=null;
+if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.68)}else if(this.prev&&clock-this.lastGood<520)this.prev={...this.prev,visible:true};else this.prev=null;
 return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
 }
 function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*1.36*scale,visible:true}}
 function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*1.24*scale,visible:true}}
 function smooth(a,b,k){if(!a)return b;return{x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k,size:a.size+(b.size-a.size)*k,visible:true}}
 
-function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*1.22,bh=tr.size*.92,x=-bw/2,y=-bh/2,r=Math.min(bw,bh)*.14;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.10)";ctx.shadowBlur=Math.max(4,bw*.03);ctx.shadowOffsetY=Math.max(1,bh*.035);roundRect(ctx,x,y,bw,bh,r);ctx.fillStyle="#f7f3ea";ctx.fill();
-const pattern=paper(ctx);if(pattern){ctx.save();ctx.clip();ctx.globalAlpha=.32;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
-ctx.shadowColor="transparent";ctx.lineWidth=Math.max(1,bw*.006);ctx.strokeStyle="#dfd5c8";ctx.stroke();ctx.fillStyle="#48403a";ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`700 ${Math.round(bh*.34)}px "Marker Felt","Chalkboard SE","Comic Sans MS","Apple SD Gothic Neo",sans-serif`;ctx.fillText(text,0,bh*.015,bw*.82);ctx.restore()}
+function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*.98,bh=tr.size*1.10,x=-bw/2,y=-bh/2;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.08)";ctx.shadowBlur=Math.max(3,bw*.022);ctx.shadowOffsetY=Math.max(1,bh*.025);ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.fillStyle="#f7f3ea";ctx.fill();
+const pattern=paper(ctx);if(pattern){ctx.save();ctx.beginPath();ctx.rect(x,y,bw,bh);ctx.clip();ctx.globalAlpha=.38;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
+ctx.shadowColor="transparent";ctx.lineWidth=Math.max(.8,bw*.0045);ctx.strokeStyle="rgba(126,112,99,.30)";ctx.strokeRect(x,y,bw,bh);
+const fs=Math.round(bh*.30);ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`400 ${fs}px "Bradley Hand","Noteworthy","Chalkboard SE","Comic Sans MS","Apple SD Gothic Neo",sans-serif`;
+ctx.globalAlpha=.70;ctx.fillStyle="#49433e";ctx.fillText(text,-.45,.35,bw*.84);
+ctx.globalAlpha=.22;ctx.fillStyle="#312d29";ctx.fillText(text,.55,-.25,bw*.84);
+ctx.globalAlpha=.16;ctx.fillText(text,-.15,.85,bw*.84);
+ctx.restore()}
 function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
 function paper(ctx){if(!paperTile){paperTile=document.createElement("canvas");paperTile.width=72;paperTile.height=72;const p=paperTile.getContext("2d");p.fillStyle="#f7f3ea";p.fillRect(0,0,72,72);for(let i=0;i<100;i++){p.fillStyle=`rgba(120,105,92,${.03+Math.random()*.05})`;p.beginPath();p.arc(Math.random()*72,Math.random()*72,.5+Math.random()*1.2,0,Math.PI*2);p.fill()}for(let i=0;i<16;i++){const x=Math.random()*72,y=Math.random()*72;p.strokeStyle="rgba(135,118,103,.06)";p.beginPath();p.moveTo(x,y);p.lineTo(x+7+Math.random()*15,y+Math.random()*3-1.5);p.stroke()}}return ctx.createPattern(paperTile,"repeat")}
 
