@@ -81,7 +81,7 @@ const editTabs=[...document.querySelectorAll(".editTab")],editPanels=[...documen
 let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
 let paperTile=null;
 let tracker=null;
-let trackingCache=[],analysisReady=false,analysisRunning=false,baseStickerSize=0,sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}],sizeEditing=false;
+let trackingCache=[],analysisReady=false,analysisRunning=false,baseStickerSize=0,baseEyeDist=0,sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}],sizeEditing=false;
 let maskMode="expression",maskImage=null,maskImageUrl=null;
 
 renderExpressions(); renderTimeline(); renderSizeTimeline();
@@ -129,7 +129,7 @@ await metadataWithTimeout(8000);
 const w=video.videoWidth||1080,h=video.videoHeight||1920;
 stage.style.aspectRatio=String(w/h);overlay.width=w;overlay.height=h;await new Promise(requestAnimationFrame);syncOverlayBox();
 seek.max=String(Number.isFinite(video.duration)?video.duration:1);dur.textContent=fmt(video.duration);
-keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}];baseStickerSize=0;sizeEditing=false;scale.value="1";scaleOut.value="100%";trackingCache=[];analysisReady=false;renderTimeline();renderSizeTimeline();
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];sizeKeyframes=[{id:crypto.randomUUID(),time:0,scale:1}];baseStickerSize=0;baseEyeDist=0;sizeEditing=false;scale.value="1";scaleOut.value="100%";trackingCache=[];analysisReady=false;renderTimeline();renderSizeTimeline();
 try{await seekTo(0.001)}catch{}
 drawRawFrame();
 badge.textContent="얼굴 추적 준비 중…";
@@ -165,6 +165,12 @@ sizeTimeline.innerHTML=sizeKeyframes.map(k=>`<div class="kf"><button class="kfMa
 sizeTimeline.querySelectorAll("[data-size-time]").forEach(b=>b.onclick=()=>{video.currentTime=Number(b.dataset.sizeTime);sizeEditing=false;syncSizeControl();drawPreview(true)});
 sizeTimeline.querySelectorAll("[data-size-del]").forEach(b=>b.onclick=()=>{sizeKeyframes=sizeKeyframes.filter(k=>k.id!==b.dataset.sizeDel);sizeEditing=false;renderSizeTimeline();syncSizeControl();drawPreview(true)})
 }
+function eyeScaleFromDistance(eyeDist){
+if(!baseEyeDist||!Number.isFinite(eyeDist))return 1;
+const ratio=eyeDist/baseEyeDist,dead=.04,delta=ratio-1,mag=Math.abs(delta);
+if(mag<=dead)return 1;
+return 1+Math.sign(delta)*(mag-dead)
+}
 function cachedFaceAt(t,preview=false){
 if(!trackingCache.length)return null;
 let lo=0,hi=trackingCache.length-1,tr=null;
@@ -173,9 +179,17 @@ else if(t>=trackingCache[hi].t)tr=trackingCache[hi].tr;
 else{
  while(hi-lo>1){const m=(lo+hi)>>1;if(trackingCache[m].t<=t)lo=m;else hi=m}
  const a=trackingCache[lo],b=trackingCache[hi];
- if(!a.tr)tr=b.tr;else if(!b.tr)tr=a.tr;else{const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1)));tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,visible:true}}
+ if(!a.tr)tr=b.tr;else if(!b.tr)tr=a.tr;else{
+  const p=Math.max(0,Math.min(1,(t-a.t)/(b.t-a.t||1)));
+  const ae=a.tr.eyeDist,be=b.tr.eyeDist;
+  const eyeDist=Number.isFinite(ae)&&Number.isFinite(be)?ae+(be-ae)*p:(Number.isFinite(ae)?ae:be);
+  tr={x:a.tr.x+(b.tr.x-a.tr.x)*p,y:a.tr.y+(b.tr.y-a.tr.y)*p,eyeDist,visible:true}
+ }
 }
-if(!tr)return null;const sc=preview&&sizeEditing?Number(scale.value):sizeAt(t);return{x:tr.x,y:tr.y,size:baseStickerSize*sc,visible:true}
+if(!tr)return null;
+const manual=preview&&sizeEditing?Number(scale.value):sizeAt(t);
+const auto=eyeScaleFromDistance(tr.eyeDist);
+return{x:tr.x,y:tr.y,size:baseStickerSize*auto*manual,eyeDist:tr.eyeDist,visible:true}
 }
 function drawPreview(force){
 if(!video.videoWidth)return;syncOverlayBox();const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
@@ -196,6 +210,8 @@ for(let i=0;i<src.length;i++){
  const motion=Math.hypot(last.x-first.x,last.y-first.y)/ref;
  const strength=motion<.05?.88:motion<.12?.62:motion<.22?.34:.10;
  out[i].tr.x=cur.x+(targetX-cur.x)*strength;out[i].tr.y=cur.y+(targetY-cur.y)*strength;
+ const eyes=samples.map(q=>q.tr.eyeDist).filter(Number.isFinite);
+ if(eyes.length>=3){let ew=0,es=0;for(const q of samples){if(!Number.isFinite(q.tr.eyeDist))continue;const w=q.d===0?3:q.d===1?2:1;ew+=w;es+=q.tr.eyeDist*w}const eavg=es/ew,emed=median(eyes);out[i].tr.eyeDist=eavg*.65+emed*.35}
 }
 return out
 }
@@ -210,6 +226,7 @@ for(let i=0;i<=total;i++){
 }
 trackingCache=stabilizeTrackingCache(trackingCache);
 const firstSizes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.size)).slice(0,12).map(x=>x.tr.size).sort((a,b)=>a-b);baseStickerSize=firstSizes.length?firstSizes[Math.floor(firstSizes.length/2)]:Math.min(overlay.width,overlay.height)*.24;
+const firstEyes=trackingCache.filter(x=>x.tr&&Number.isFinite(x.tr.eyeDist)).slice(0,12).map(x=>x.tr.eyeDist).sort((a,b)=>a-b);baseEyeDist=firstEyes.length?firstEyes[Math.floor(firstEyes.length/2)]:0;
 analysisRunning=false;analysisReady=true;await seekTo(Math.min(restore,video.duration-.001));badge.classList.add("hidden");syncSizeControl();drawPreview(true)
 }
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
@@ -235,7 +252,7 @@ if(!raw&&this.det){try{const d=this.det.detectForVideo(el,ts+.01).detections?.[0
 if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.92)}else if(this.prev&&clock-this.lastGood<520)this.prev={...this.prev,visible:true};else this.prev=null;
 return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
 }
-function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*.995*scale,visible:true}}
+function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;const le1=l[33],le2=l[133],re1=l[362],re2=l[263];let eyeDist=null;if(le1&&le2&&re1&&re2){const lx=(le1.x+le2.x)*.5*w,ly=(le1.y+le2.y)*.5*h,rx=(re1.x+re2.x)*.5*w,ry=(re1.y+re2.y)*.5*h;eyeDist=Math.hypot(rx-lx,ry-ly)}return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*.995*scale,eyeDist,visible:true}}
 function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*.91*scale,visible:true}}
 function smooth(a,b,k){
 if(!a)return b;
@@ -248,7 +265,7 @@ if(rel>.018){
   const sizeAlpha=rel>.10?.32:rel>.05?.22:.14;
   size=a.size+diff*sizeAlpha;
 }
-return{x:b.x,y:b.y,size,visible:true}
+return{x:b.x,y:b.y,size,eyeDist:Number.isFinite(b.eyeDist)?b.eyeDist:a.eyeDist,visible:true}
 }
 function drawMaskImage(ctx,tr,img){if(!tr?.visible||!img?.naturalWidth)return;const bw=tr.size*.98,bh=tr.size*1.10,x=tr.x-bw/2,y=tr.y-bh/2;const ir=img.naturalWidth/img.naturalHeight,br=bw/bh;let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;if(ir>br){sw=img.naturalHeight*br;sx=(img.naturalWidth-sw)/2}else{sh=img.naturalWidth/br;sy=(img.naturalHeight-sh)/2}ctx.drawImage(img,sx,sy,sw,sh,x,y,bw,bh)}
 function drawMask(ctx,tr,text){if(maskMode==="image"&&maskImage)drawMaskImage(ctx,tr,maskImage);else drawSticker(ctx,tr,text)}
