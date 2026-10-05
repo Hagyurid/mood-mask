@@ -127,7 +127,8 @@ const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(vid
 function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
 function renderTimeline(){timeline.innerHTML=keyframes.map((k,i)=>{const e=getExpr(k.expr);return `<div class="kf"><button class="kfMain" data-time="${k.time}"><b style="font-family:-apple-system,BlinkMacSystemFont,Apple SD Gothic Neo,sans-serif">${e.t}</b> · ${fmt(k.time)}부터</button>${k.time>.01?`<button class="kfDel" data-del="${k.id}">×</button>`:""}</div>`}).join("");timeline.querySelectorAll("[data-time]").forEach(b=>b.onclick=()=>video.currentTime=Number(b.dataset.time));timeline.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{keyframes=keyframes.filter(k=>k.id!==b.dataset.del);renderTimeline();drawPreview(true)})}
 function exprAt(t){let x="happy";for(const k of [...keyframes].sort((a,b)=>a.time-b.time)){if(k.time<=t+.001)x=k.expr;else break}return x}
-function getExpr(id){return EXPRESSIONS.find(e=>e.id===id)||EXPRESSIONS[0]}\nfunction transitionAt(t){
+function getExpr(id){return EXPRESSIONS.find(e=>e.id===id)||EXPRESSIONS[0]}
+function transitionAt(t){
 const sorted=[...keyframes].sort((a,b)=>a.time-b.time);
 for(let i=1;i<sorted.length;i++){
   const k=sorted[i],dt=t-k.time;
