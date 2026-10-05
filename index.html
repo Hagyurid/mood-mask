@@ -1,21 +1,140 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f4f0e8" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Mood Mask" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="description" content="영상 속 얼굴을 귀여운 텍스트 표정 박스로 가리는 편집기" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-    <link rel="stylesheet" href="./src/style.css" />
-    <title>Mood Mask</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="./src/main.js"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f0e8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Mood Mask">
+<title>Mood Mask</title>
+<style>
+:root{--paper:#f7f3ea;--paper2:#efe7dc;--ink:#48403a;--line:#ded4c6;--bg:#ebe5dc}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif}
+button,input,select{font:inherit}.shell{width:min(100%,680px);margin:auto;padding:18px 14px 48px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.eyebrow{font-size:11px;letter-spacing:.18em;font-weight:800;margin:0}.top h1{font-size:22px;margin:3px 0 0}.card{background:linear-gradient(#fbf8f1,#f2eadf);border:1px solid #ddd3c6;border-radius:24px;padding:18px;box-shadow:0 12px 28px rgba(74,62,52,.08)}.upload{text-align:center;padding:40px 22px}.demo{width:126px;height:98px;margin:0 auto 18px;border:1px solid #ded4c6;border-radius:20px;display:grid;place-items:center;background:var(--paper);font-family:"Marker Felt","Chalkboard SE","Comic Sans MS",sans-serif;font-size:34px;box-shadow:0 8px 20px rgba(72,64,58,.09)}.upload h2{font-size:20px}.upload p{font-size:13px;line-height:1.6;color:#81766c}.primary,.secondary{border:0;border-radius:15px;min-height:48px;padding:0 18px;font-weight:800;cursor:pointer}.primary{background:#514940;color:#fff}.secondary{background:#e9e0d4;color:#514940;border:1px solid #d9cebf}.wide{width:100%}.hidden{display:none!important}.stageWrap{background:#1e1c1b;border-radius:24px;overflow:hidden}.stage{position:relative;width:100%;background:#171615;overflow:hidden}.stage video{width:100%;height:100%;display:block;object-fit:contain}.stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.badge{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(247,243,234,.94);padding:8px 11px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}.transport{display:grid;grid-template-columns:38px auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;color:#fff;font-size:11px}.play{width:34px;height:34px;border:0;border-radius:50%;background:#f5efe6;color:#453e39;font-weight:900}.transport input{width:100%}.editor{display:grid;gap:13px}.card h2{font-size:17px;margin:2px 0 13px}.kicker{font-size:10px;font-weight:800;letter-spacing:.12em;color:#908378;margin:0}.exprGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.expr{min-height:70px;border:1px solid #ded4c6;border-radius:16px;background:linear-gradient(#faf7f0,#f1e9de);display:grid;place-items:center;padding:7px;color:var(--ink)}.expr span{font-family:"Marker Felt","Chalkboard SE","Comic Sans MS",sans-serif;font-size:21px;font-weight:700}.expr small{font-size:9px;color:#978a7f}.expr.selected{outline:2px solid #6c5f55;background:#ece3d7}.expr.playing{transform:translateY(-2px)}.rowHead{display:flex;justify-content:space-between;align-items:center}.switch{font-size:11px;color:#7d7066}.timeline{display:grid;gap:7px;margin-top:12px}.kf{display:grid;grid-template-columns:1fr auto;align-items:center;background:#f7f2e9;border:1px solid #ded4c6;border-radius:14px;overflow:hidden}.kfMain{border:0;background:transparent;text-align:left;padding:10px 12px;color:var(--ink)}.kfDel{border:0;border-left:1px solid #ded4c6;background:transparent;align-self:stretch;width:42px;font-size:20px;color:#95877c}.slider{display:grid;grid-template-columns:48px 1fr 52px;align-items:center;gap:10px;font-size:13px;font-weight:700}.slider output{text-align:right;color:#8c7f75}.micro{font-size:11px;color:#91857a;line-height:1.5}.progress{height:8px;background:#e6ddd1;border-radius:999px;overflow:hidden;margin-top:12px}.bar{height:100%;width:0;background:#5a5047}.done{display:grid;gap:8px;margin-top:10px}.download{display:grid;place-items:center;text-decoration:none;min-height:46px;border-radius:14px;background:#e7ded2;color:#4c443d;border:1px solid #d4c8ba;font-weight:800}.newBtn{border:1px solid #d4cabd;background:transparent;border-radius:12px;padding:8px 10px;color:#5d534b}.install{margin-top:16px;padding:11px 13px;border-radius:14px;background:#f5efe6;border:1px solid #ddd3c6;font-size:11px;text-align:left}.install b{display:block;margin-bottom:3px}
+@media(max-width:420px){.shell{padding:12px}.card{padding:15px;border-radius:21px}.exprGrid{gap:6px}.expr{min-height:66px}.top h1{font-size:20px}}
+</style>
+</head>
+<body>
+<main class="shell">
+<header class="top"><div><p class="eyebrow">MOOD MASK</p><h1>얼굴 위에 표정을 입혀요</h1></div><button id="newBtn" class="newBtn hidden">새 영상</button></header>
+<section id="upload" class="card upload">
+<div class="demo">^ㅁ^</div>
+<h2>동영상 하나만 넣으면 돼요</h2>
+<p>얼굴 중심을 따라 아이보리 종이 표정 박스가 움직여요. 영상은 기기 안에서 처리됩니다.</p>
+<label class="primary" style="display:inline-grid;place-items:center;min-width:150px">영상 선택<input id="file" type="file" accept="video/*" hidden></label>
+<div class="install"><b>아이폰에서 앱처럼 쓰기</b>Safari 공유 → 홈 화면에 추가</div>
+</section>
+<section id="editor" class="editor hidden">
+<div class="stageWrap">
+<div id="stage" class="stage"><video id="video" playsinline preload="metadata"></video><canvas id="overlay"></canvas><div id="badge" class="badge">준비 중…</div></div>
+<div class="transport"><button id="play" class="play">▶</button><span id="now">0:00.0</span><input id="seek" type="range" min="0" max="1" step=".001" value="0"><span id="dur">0:00.0</span></div>
+</div>
+<section class="card">
+<div class="rowHead"><div><p class="kicker">표정</p><h2>어떤 얼굴로 가릴까?</h2></div><label class="switch"><input id="auto" type="checkbox"> 자동</label></div>
+<div id="exprGrid" class="exprGrid"></div>
+<button id="add" class="secondary wide" style="margin-top:11px">현재 시간부터 이 표정</button>
+<div id="timeline" class="timeline"></div>
+</section>
+<section class="card"><p class="kicker">크기</p><h2>박스 크기만 조절</h2><label class="slider">크기<input id="scale" type="range" min=".7" max="1.6" step=".01" value="1"><output id="scaleOut">100%</output></label></section>
+<section class="card">
+<p class="kicker">저장</p><h2>완성 영상 만들기</h2>
+<button id="exportBtn" class="primary wide">영상 만들기</button>
+<div id="progressWrap" class="hidden"><div class="progress"><div id="bar" class="bar"></div></div><p id="progressText" class="micro">준비 중…</p></div>
+<div id="done" class="done hidden"><button id="share" class="primary wide hidden">아이폰에 저장 / 공유</button><a id="download" class="download">완성 영상 다운로드</a></div>
+<p class="micro">iPhone에서 공유 버튼이 보이면 공유 시트의 ‘비디오 저장’을 선택하세요.</p>
+</section>
+</section>
+<canvas id="renderCanvas" class="hidden"></canvas>
+</main>
+<script type="module">
+import { FaceDetector, FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
+
+const EXPRESSIONS=[
+{id:"happy",t:"^ㅁ^",l:"활짝"},{id:"soft",t:"^_^",l:"방긋"},{id:"blank",t:"ㅇㅅㅇ",l:"멍"},
+{id:"squint",t:">_<",l:"찡긋"},{id:"cry",t:"ㅠㅠ",l:"울음"},{id:"teary",t:";ㅁ;",l:"훌쩍"},
+{id:"kiss",t:"-3-",l:"삐죽"},{id:"dot",t:"._.",l:"정적"},{id:"surprise",t:"ㅇㅁㅇ",l:"놀람"},
+{id:"kiss2",t:"^3^",l:"쪽"},{id:"sleep",t:"-_-",l:"졸림"},{id:"dizzy",t:"@ㅁ@",l:"혼란"}];
+const $=id=>document.getElementById(id);
+const file=$("file"),upload=$("upload"),editor=$("editor"),newBtn=$("newBtn"),video=$("video"),stage=$("stage"),overlay=$("overlay"),badge=$("badge");
+const play=$("play"),seek=$("seek"),now=$("now"),dur=$("dur"),exprGrid=$("exprGrid"),timeline=$("timeline"),auto=$("auto"),scale=$("scale"),scaleOut=$("scaleOut");
+const exportBtn=$("exportBtn"),progressWrap=$("progressWrap"),bar=$("bar"),progressText=$("progressText"),done=$("done"),share=$("share"),download=$("download"),renderCanvas=$("renderCanvas");
+let selected="happy", keyframes=[{id:crypto.randomUUID(),time:0,expr:"happy"}], objectUrl=null, lastBlob=null, lastExt="mp4", raf=0, lastDetect=0, latest=null, latestBlend=[];
+let paperTile=null;
+const tracker=new FaceTracker();
+
+renderExpressions(); renderTimeline();
+
+file.onchange=()=>{const f=file.files?.[0];if(f)loadVideo(f)};
+newBtn.onclick=()=>{file.value="";file.click()};
+play.onclick=async()=>{video.paused?await video.play():video.pause()};
+video.onplay=()=>{play.textContent="❚❚"; loop()};
+video.onpause=()=>{play.textContent="▶";cancelAnimationFrame(raf);drawPreview(true)};
+video.onended=()=>{play.textContent="▶";drawPreview(true)};
+video.onseeked=()=>{tracker.reset();drawPreview(true)};
+seek.oninput=()=>{video.currentTime=Number(seek.value);now.textContent=fmt(video.currentTime)};
+scale.oninput=()=>{scaleOut.value=Math.round(Number(scale.value)*100)+"%";tracker.reset();drawPreview(true)};
+$("add").onclick=()=>{const t=video.currentTime;const same=keyframes.find(k=>Math.abs(k.time-t)<.12);if(same)same.expr=selected;else keyframes.push({id:crypto.randomUUID(),time:t,expr:selected});keyframes.sort((a,b)=>a.time-b.time);renderTimeline();drawPreview(true)};
+exportBtn.onclick=exportVideo;
+share.onclick=async()=>{if(!lastBlob)return;const f=new File([lastBlob],`mood-mask.${lastExt}`,{type:lastExt==="mp4"?"video/mp4":"video/webm"});try{await navigator.share({files:[f]})}catch(e){if(e?.name!=="AbortError")download.click()}};
+
+async function loadVideo(f){
+if(!f.type.startsWith("video/"))return;
+if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);video.src=objectUrl;
+upload.classList.add("hidden");editor.classList.remove("hidden");newBtn.classList.remove("hidden");badge.classList.remove("hidden");badge.textContent="영상 읽는 중…";
+await metadata();stage.style.aspectRatio=String(video.videoWidth/video.videoHeight);overlay.width=video.videoWidth;overlay.height=video.videoHeight;seek.max=String(video.duration);dur.textContent=fmt(video.duration);
+keyframes=[{id:crypto.randomUUID(),time:0,expr:selected}];renderTimeline();
+await tracker.init(s=>badge.textContent=s);badge.classList.add("hidden");tracker.reset();drawPreview(true);
+}
+function metadata(){if(video.readyState>=1)return Promise.resolve();return new Promise((res,rej)=>{video.addEventListener("loadedmetadata",res,{once:true});video.addEventListener("error",()=>rej(new Error("영상 읽기 실패")),{once:true})})}
+function loop(){cancelAnimationFrame(raf);const tick=()=>{drawPreview(false);if(!video.paused&&!video.ended)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
+function drawPreview(force){
+if(!video.videoWidth)return;const c=overlay.getContext("2d");c.clearRect(0,0,overlay.width,overlay.height);
+if(force||performance.now()-lastDetect>45){const f=tracker.detect(video,overlay.width,overlay.height,Number(scale.value));latest=f.transform;latestBlend=f.blend;lastDetect=performance.now();badge.classList.toggle("hidden",!!latest);if(!latest)badge.textContent="얼굴을 찾는 중…"}
+const id=auto.checked?autoExpr(latestBlend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,latest,getExpr(id).t);seek.value=String(video.currentTime);now.textContent=fmt(video.currentTime);markPlaying(id)
+}
+function renderExpressions(){exprGrid.innerHTML=EXPRESSIONS.map(e=>`<button class="expr ${e.id===selected?"selected":""}" data-id="${e.id}"><span>${e.t}</span><small>${e.l}</small></button>`).join("");exprGrid.querySelectorAll("button").forEach(b=>b.onclick=()=>{selected=b.dataset.id;renderExpressions()})}
+function renderTimeline(){timeline.innerHTML=keyframes.map((k,i)=>{const e=getExpr(k.expr);return `<div class="kf"><button class="kfMain" data-time="${k.time}"><b style="font-family:Marker Felt,Chalkboard SE,sans-serif">${e.t}</b> · ${fmt(k.time)}부터</button>${k.time>.01?`<button class="kfDel" data-del="${k.id}">×</button>`:""}</div>`}).join("");timeline.querySelectorAll("[data-time]").forEach(b=>b.onclick=()=>video.currentTime=Number(b.dataset.time));timeline.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{keyframes=keyframes.filter(k=>k.id!==b.dataset.del);renderTimeline();drawPreview(true)})}
+function exprAt(t){let x="happy";for(const k of [...keyframes].sort((a,b)=>a.time-b.time)){if(k.time<=t+.001)x=k.expr;else break}return x}
+function getExpr(id){return EXPRESSIONS.find(e=>e.id===id)||EXPRESSIONS[0]}
+function markPlaying(id){exprGrid.querySelectorAll(".expr").forEach(b=>b.classList.toggle("playing",b.dataset.id===id))}
+function autoExpr(bs,fallback){const m=new Map((bs||[]).map(x=>[x.categoryName||x.displayName,x.score||0]));if((m.get("jawOpen")||0)>.52)return"surprise";if((m.get("mouthSmileLeft")||0)+(m.get("mouthSmileRight")||0)>.95)return"happy";if((m.get("eyeBlinkLeft")||0)>.58&&(m.get("eyeBlinkRight")||0)>.58)return"sleep";return fallback}
+function fmt(s){if(!Number.isFinite(s))return"0:00.0";const m=Math.floor(s/60),r=s-m*60;return m+":"+r.toFixed(1).padStart(4,"0")}
+
+class FaceTracker{
+constructor(){this.land=null;this.det=null;this.prev=null;this.lastTs=0;this.lastGood=0}
+async init(status){if(this.land)return;status?.("얼굴 추적 모델 불러오는 중…");const v=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm");
+const opts={runningMode:"VIDEO",numFaces:1,minFaceDetectionConfidence:.30,minFacePresenceConfidence:.25,minTrackingConfidence:.25,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:false};
+try{this.land=await FaceLandmarker.createFromOptions(v,{...opts,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"}})}
+catch{this.land=await FaceLandmarker.createFromOptions(v,{...opts,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"CPU"}})}
+status?.("작은 얼굴 보조 검출기 준비 중…");try{this.det=await FaceDetector.createFromOptions(v,{runningMode:"VIDEO",minDetectionConfidence:.25,minSuppressionThreshold:.3,baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/latest/blaze_face_full_range.tflite",delegate:"CPU"}})}catch{this.det=null}
+status?.("준비 완료")}
+reset(){this.prev=null;this.lastGood=0}
+detect(el,w,h,scale){if(!this.land||el.readyState<2)return{transform:null,blend:[]};const clock=performance.now(),ts=Math.max(this.lastTs+.1,clock);this.lastTs=ts;const r=this.land.detectForVideo(el,ts);let raw=r.faceLandmarks?.[0]?fromLandmarks(r.faceLandmarks[0],w,h,scale):null;
+if(!raw&&this.det){try{const d=this.det.detectForVideo(el,ts+.01).detections?.[0];raw=d?fromDetection(d,w,h,scale):null}catch{}}
+if(raw){this.lastGood=clock;this.prev=smooth(this.prev,raw,.28)}else if(this.prev&&clock-this.lastGood<520)this.prev={...this.prev,visible:true};else this.prev=null;
+return{transform:this.prev,blend:r.faceBlendshapes?.[0]?.categories||[]}}
+}
+function fromLandmarks(l,w,h,scale){let minX=1,minY=1,maxX=0,maxY=0;for(const p of l){minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y)}const fw=(maxX-minX)*w,fh=(maxY-minY)*h;if(fw<8||fh<8)return null;return{x:(minX+maxX)*.5*w,y:(minY+maxY)*.5*h,size:Math.max(fw,fh)*1.36*scale,visible:true}}
+function fromDetection(d,w,h,scale){const b=d.boundingBox;if(!b)return null;let x=Number(b.originX||0),y=Number(b.originY||0),bw=Number(b.width||0),bh=Number(b.height||0);if(bw<=2&&bh<=2){x*=w;y*=h;bw*=w;bh*=h}if(bw<6||bh<6)return null;return{x:x+bw/2,y:y+bh/2,size:Math.max(bw,bh)*1.24*scale,visible:true}}
+function smooth(a,b,k){if(!a)return b;return{x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k,size:a.size+(b.size-a.size)*k,visible:true}}
+
+function drawSticker(ctx,tr,text){if(!tr?.visible)return;const bw=tr.size*1.22,bh=tr.size*.92,x=-bw/2,y=-bh/2,r=Math.min(bw,bh)*.14;ctx.save();ctx.translate(tr.x,tr.y);ctx.shadowColor="rgba(78,69,61,.10)";ctx.shadowBlur=Math.max(4,bw*.03);ctx.shadowOffsetY=Math.max(1,bh*.035);roundRect(ctx,x,y,bw,bh,r);ctx.fillStyle="#f7f3ea";ctx.fill();
+const pattern=paper(ctx);if(pattern){ctx.save();ctx.clip();ctx.globalAlpha=.32;ctx.fillStyle=pattern;ctx.fillRect(x,y,bw,bh);ctx.restore()}
+ctx.shadowColor="transparent";ctx.lineWidth=Math.max(1,bw*.006);ctx.strokeStyle="#dfd5c8";ctx.stroke();ctx.fillStyle="#48403a";ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`700 ${Math.round(bh*.34)}px "Marker Felt","Chalkboard SE","Comic Sans MS","Apple SD Gothic Neo",sans-serif`;ctx.fillText(text,0,bh*.015,bw*.82);ctx.restore()}
+function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function paper(ctx){if(!paperTile){paperTile=document.createElement("canvas");paperTile.width=72;paperTile.height=72;const p=paperTile.getContext("2d");p.fillStyle="#f7f3ea";p.fillRect(0,0,72,72);for(let i=0;i<100;i++){p.fillStyle=`rgba(120,105,92,${.03+Math.random()*.05})`;p.beginPath();p.arc(Math.random()*72,Math.random()*72,.5+Math.random()*1.2,0,Math.PI*2);p.fill()}for(let i=0;i<16;i++){const x=Math.random()*72,y=Math.random()*72;p.strokeStyle="rgba(135,118,103,.06)";p.beginPath();p.moveTo(x,y);p.lineTo(x+7+Math.random()*15,y+Math.random()*3-1.5);p.stroke()}}return ctx.createPattern(paperTile,"repeat")}
+
+async function exportVideo(){
+if(!video.duration)return;exportBtn.disabled=true;progressWrap.classList.remove("hidden");done.classList.add("hidden");bar.style.width="0";progressText.textContent="준비 중…";video.pause();
+const original=video.currentTime;const w=video.videoWidth,h=video.videoHeight;renderCanvas.width=w;renderCanvas.height=h;const c=renderCanvas.getContext("2d",{alpha:false});const stream=renderCanvas.captureStream(30);
+let audioTracks=[];let audioCleanup=()=>{};try{const ac=new AudioContext();const src=ac.createMediaElementSource(video);const dest=ac.createMediaStreamDestination();src.connect(dest);const gain=ac.createGain();gain.gain.value=0;src.connect(gain);gain.connect(ac.destination);audioTracks=dest.stream.getAudioTracks();audioCleanup=()=>{dest.stream.getTracks().forEach(t=>t.stop())}}catch{}
+const combined=new MediaStream([...stream.getVideoTracks(),...audioTracks]);const candidates=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp8","video/webm"];const mime=candidates.find(m=>MediaRecorder.isTypeSupported(m))||"";let rec;try{rec=new MediaRecorder(combined,{mimeType:mime||undefined,videoBitsPerSecond:8000000})}catch(e){progressText.textContent="이 브라우저에서는 영상 저장을 지원하지 않아요.";exportBtn.disabled=false;return}
+const chunks=[];rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};await seekTo(0);const exportTracker=new FaceTracker();await exportTracker.init();exportTracker.reset();
+const finished=new Promise((resolve,reject)=>{rec.onerror=()=>reject(new Error("인코딩 오류"));rec.onstop=()=>resolve(new Blob(chunks,{type:rec.mimeType||mime||"video/mp4"}))});rec.start(500);
+let stop=false;const draw=()=>{if(stop)return;c.drawImage(video,0,0,w,h);const f=exportTracker.detect(video,w,h,Number(scale.value));const id=auto.checked?autoExpr(f.blend,exprAt(video.currentTime)):exprAt(video.currentTime);drawSticker(c,f.transform,getExpr(id).t);const p=Math.min(.99,video.currentTime/video.duration);bar.style.width=Math.round(p*100)+"%";progressText.textContent="영상 만드는 중… "+Math.round(p*100)+"%";requestAnimationFrame(draw)};draw();video.addEventListener("ended",()=>{stop=true;if(rec.state!=="inactive")rec.stop()},{once:true});await video.play();const blob=await finished;stream.getTracks().forEach(t=>t.stop());audioCleanup();exportTracker.land?.close();exportTracker.det?.close();lastBlob=blob;lastExt=blob.type.includes("mp4")?"mp4":"webm";const u=URL.createObjectURL(blob);download.href=u;download.download=`mood-mask.${lastExt}`;download.textContent=lastExt==="mp4"?"완성 MP4 다운로드":"완성 영상 다운로드";done.classList.remove("hidden");if(navigator.canShare){const f=new File([blob],`mood-mask.${lastExt}`,{type:blob.type});try{if(navigator.canShare({files:[f]}))share.classList.remove("hidden")}catch{}}
+bar.style.width="100%";progressText.textContent="완성됐어요.";exportBtn.disabled=false;video.currentTime=Math.min(original,video.duration)}
+function seekTo(t){return new Promise(res=>{const done=()=>res();video.addEventListener("seeked",done,{once:true});video.currentTime=t;setTimeout(res,1200)})}
+</script>
+</body>
 </html>
