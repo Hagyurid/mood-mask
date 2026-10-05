@@ -1,0 +1,14 @@
+{
+  "name": "Mood Mask",
+  "short_name": "Mood Mask",
+  "description": "영상 속 얼굴을 귀여운 텍스트 표정 박스로 가리는 편집기",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f0e8",
+  "theme_color": "#f4f0e8",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
